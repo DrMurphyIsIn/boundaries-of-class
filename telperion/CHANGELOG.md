@@ -1,6 +1,115 @@
 # Changelog
 
-## Unreleased -- ALL NONTRIVIAL ZEROS UP TO HEIGHT 100 ON THE LINE (Turing verification, NOT a proof of RH)
+## Unreleased -- standalone-repo follow-up cleanup (2026-10-29)
+
+Small fixes to the 0.2.0.dev0 extraction, found during review:
+
+- **Broken relative links** in `CONTRIBUTING.md`, `CHANGELOG.md`, `docs/COMPARATOR.md` and
+  `docs/NEW_EMITTERS_SUMMARY.md` (18 links pointing past the repository root, or at files that
+  stayed in Arda) now resolve: in-repo targets were corrected, and targets that stayed in Arda
+  were replaced with absolute links into [DrMurphyIsIn/Arda](https://github.com/DrMurphyIsIn/Arda).
+- **Arda-layout setup instructions** (`cd telperion`, `pip install -e telperion`) in
+  `CONTRIBUTING.md` and `docs/GETTING_STARTED.md` rewritten for a standalone checkout
+  (`git clone ... && cd telperion && pip install -e .`).
+- **Stale comments**: `src/telperion/__init__.py`'s research-lab comment reworded (labs live in
+  their consumer repos, not under `telperion.bg` specifically); the `__version__` definition gained
+  a one-line note on why it stays `0.1.6`.
+- **`python -m telperion`** now runs the CLI (`src/telperion/__main__.py`, mirroring the
+  `telperion` console script), with a test (`tests/test_dunder_main.py`) that `--help` exits 0.
+- **`examples/hermitian_moment/`** copied over from Arda: the verbatim Apache-2.0 port of the
+  Hermitian-matrix linear-algebra core (`RHLinalg`: `posIndex`, Sylvester, Weyl, von Neumann) that
+  `examples/gram_inertia/lean/lakefile.toml` requires as a sibling `path` dependency. It is neutral
+  linear algebra (classical inertia/rank-trace/Weyl/von-Neumann inequalities) with no RH/BG research
+  data and nothing from the zeta/rvm/li/quasicrystal/brualdi/goldwasser programmes, despite the
+  `RHLinalg` name (inherited from its upstream source, `anthropics/zeta-23-lean`) and its citing
+  paper (arXiv:2608.13637). This fixes `examples/gram_inertia`'s dangling `../../hermitian_moment/lean`
+  require, which pointed outside this repository.
+
+## 0.2.0.dev0 -- standalone repository (2026-10-29)
+
+Telperion now has a repository of its own. Until this version it lived in `telperion/` inside Arda, next to the
+Brualdi-Goldwasser and Riemann-hypothesis research it was built for. This is the first standalone line, not a release.
+
+- **Extracted with its history.** `git filter-repo` over Arda's history kept only the paths of the standalone tree (883
+  files) and the 816 commits that touched them. Claude-Session trailers were stripped; Co-Authored-By lines were kept.
+- **What came over:**
+  - the engine, `src/telperion/`, including the missions framework (schema, registry, judge, provenance, rejudge,
+    nanoda-direct), `evolve`, `negctrl_adapters` and `prove2me`;
+  - the engine tests in `tests/` (3818 tests in the step 2 baseline), including `tests/test_engine_boundary.py`;
+  - 30 examples: the ten canonical ones (`rational_sos`, `sos_refutation`, `handelman`, `putinar`,
+    `real_nullstellensatz`, `sturm_positive`, `polya_zeros`, `wz`, `primality`, `padic_valuation`) and twenty that engine
+    tests read as data;
+  - `missions/judge/README.md`, `missions/judge_tools/`, `scripts/guard_anchors.py`, `scripts/judge_materialize.sh` and
+    `NANODA_REV`;
+  - an allowlist of engine docs (`ARCHITECTURE`, `COMPARATOR`, `GETTING_STARTED`, `METHODOLOGY`, `MISSIONS_HOWTO`,
+    `TACTIC_CONTRACT`, `TRUSTED_FLOOR` and others), with the evolve, analytic-structures and standalone specs and plans;
+  - `pyproject.toml`, `README.md`, `LICENSE`, `CLA.md`, `CONTRIBUTING.md` and this changelog.
+- **What stayed in Arda:**
+  - the research labs: `telperion.bg`, `bg_upper_bound`, `bg_bulk_discharge`, `rh_jensen`, `li_coeff` and
+    `weil_form_eval` (`telperion.boundary.LABS`), with their tests, including the lab halves of the test files split in
+    step 2c;
+  - the mission campaigns (`missions/rh`, `missions/bg`, `missions/mirrormere`, `missions/anduril`) and the committed
+    judge bundles in `missions/judge/`, with the step 0 re-judge queue and log;
+  - the research examples (the BG examples, `zeta_zero_localization`, `rvm_bridge`, `li_positivity`, `quasicrystal`, the
+    RH-face examples and others), plus `toy_box`, `backend_integration` and `claude-plugin/`;
+  - `research/`, `explorer/`, `prototypes/`, `scratch/`, `tools/` and the top-level research notes (`PROOF_*.md`,
+    `TIER_*_TARGETS.md` and the like);
+  - nearly all of `telperion/docs/`: the RH and BG mission notes, the per-emitter design notes and the emitter roadmaps;
+  - Arda's CI workflows, and the tests that read them;
+  - **the Arda-side extraction tooling**: `scripts/lab_manifest.py`, `scripts/extraction_paths.py`,
+    `scripts/extraction_baseline.py`, `scripts/extract_repo.sh`, `docs/extraction/` (`extraction_rules.toml`,
+    `LAB_MANIFEST.json`, `EXTRACTION_PATHS.txt`, `BASELINE.json`, `BASELINE.md`) and their tests
+    (`test_lab_manifest.py`, `test_extraction_paths.py`, `test_extraction_baseline.py`). They describe Arda's labs, so
+    they were never part of the extracted tree.
+- **Done in Arda first (steps 0 to 2), so the extraction could be checked by test equivalence:**
+  - nanoda pinned to one commit in `NANODA_REV`;
+  - the engine/lab boundary generalised from BG to every lab (`telperion.boundary`, `tests/test_engine_boundary.py`);
+  - layout-neutral paths (`telperion.paths`), so the same code finds `NANODA_REV` and the examples in the Arda layout
+    and in this one;
+  - the `mcp` extra capped at `mcp>=1.2,<2`;
+  - 28 mixed test files split into an engine half and a lab half, then a cosmetic pass over the split engine halves
+    that renamed RH/BG programme names in comments, slugs and made-up strings.
+- **New in this repository:**
+  - `.github/workflows/ci.yml`: one job, `test`, on Python 3.11 and 3.14 with the same sympy matrix as Arda's
+    `telperion-test.yml` (sympy 1.12 on 3.11 only). It uses Arda's install line plus `-e .` and `mpmath`, and runs
+    `pytest tests -q -rs`. It does not build Lean.
+  - `LICENSING.md`: the engine is BSL 1.1; `examples/`, `docs/` and emitted certificates are Apache-2.0 /
+    CC-BY-4.0.
+  - `README.md` rewritten for a standalone engine. It points to Arda and to the public consumer repositories
+    (tenth-discriminant, brualdi-goldwasser, riemann-hypothesis-lean) for the research.
+  - The package version is `0.2.0.dev0`.
+- **Not changed:**
+  - `telperion.__version__` is still `0.1.6`. It feeds the provenance hash and the header stamped into every emitted
+    file, so bumping it would re-stamp every frozen example; that belongs to the release.
+  - `LICENSE` and `CLA.md` are unchanged.
+- **Not built yet:** vendoring (`telperion vendor`, `VENDORED.json`, `VENDORING.md`) arrives in step 7.
+
+## Unreleased -- range_completeness_decide emitter (2026-10-22, PR #762 + follow-up)
+
+- **`RangeCompletenessEmitter`** / `range_completeness_family` (kind
+  `range_completeness_decide`, a FACE of `finite_decide`): "every `m < N`
+  satisfying P is in the explicit list L", decided by `decide +kernel` over
+  `Finset.range N` against a kernel-friendly surrogate (`SqfBelow K` for
+  Mathlib's `Squarefree`, whose `Decidable` instance does not reduce under
+  `decide`) with a once-proved bridge `Squarefree m -> SqfBelow K m` and a
+  consumer theorem; optional `length` / `nodup` / `soundness` companions.
+  `K^2 > N` is enforced as a sufficient policy bound; the per-`m` cross-check of
+  the surrogate against exact `Squarefree` is the authority on agreement.
+  Stance STRUCTURALLY_NONVACUOUS with a registered kernel adapter (drop one
+  element of L: `decide +kernel` reports the proposition false).  Design note
+  `docs/EMITTER_RANGE_COMPLETENESS_DECIDE_DESIGN_2026-10-22.md`.
+  `conjecture1_proved = False`.
+- **`finite_decide` AST extended** with `ForallRange`, `ForallIcc`, `Not`, `And`,
+  `Mem`, `NotMem`, `Mod` and the `dvd` comparison, in the one evaluator and the
+  one renderer.  **Rendering fix (found in review):** an `Imp` whose hypothesis
+  is itself an `Imp` or a `ForallIn` is now parenthesised; the old text
+  `∀ v ∈ T, a → b` was re-associated by Lean as `∀ v ∈ T, (a → b)`, a different
+  proposition from the one Python evaluated (a latent text/semantics
+  divergence).  Evaluation is unchanged and the text is byte-identical for every
+  AST whose `Imp` hypotheses are `Cmp`, the only form existing callers use (the
+  `finite_decide` example regenerates without drift).
+
+## Earlier -- ALL NONTRIVIAL ZEROS UP TO HEIGHT 100 ON THE LINE (Turing verification, NOT a proof of RH)
 
 - **CONCRETE T=100 certificate (dVP + box combination).**
   `AllZeros_h100.all_nontrivial_zeros_up_to_height_100`
@@ -26,6 +135,29 @@
   = False`.  NOT a proof of RH.  Tests:
   `tests/test_dvp_box.py::test_all_zeros_up_to_height_100_builds` (build + clean
   axioms) and `::test_wide_box_winding_agrees_29` (Arb `N == N_line == 29`).
+
+- **Pipeline tools: closure audit + frozen-tree manifest (2026-10-22).**
+  `telperion audit-closure` renders and runs a Lean metaprogram that walks the
+  transitive constant closure of named theorems (types + proof terms + definition
+  bodies; constructors and, by default, recursors), reports a census by root
+  module, lists every non-library constant, scans names, checks that listed
+  constants/modules (`sorryAx`, a negative-control library) are absent, that every
+  axiom IN the closure is in the allowed set, that `collectAxioms` per target stays
+  inside it, and that the two axiom lists agree (they do not when a module
+  re-declares a target's name: `collectAxioms` reads the declaring module's cached
+  record, independently demonstrated); every protocol line carries a per-run nonce
+  and the verdict must be unique and consistent with the failure lines; JSON out.
+  `--no-recursors` reproduces the `getUsedConstantsAsSet` walk an independent
+  reviewer used.
+  `telperion freeze-manifest` / `verify-manifest` pin a Lake project's sources,
+  lake files, toolchain (file + elan `lean` and `lake` binaries), dependency git state (HEAD,
+  dirty diff, untracked files, patch reverse-check), tool binaries and config
+  files, and re-check them after a run.  Tools, not emitters; they audit the
+  elaborated environment of one build, not an exporter's view, and hash bytes, not
+  behaviour.  `docs/CLOSURE_AUDIT_MANIFEST_DESIGN_2026-10-22.md`;
+  `examples/closure_audit/` (PASS on honest theorems with the tainted module
+  imported; FAIL on the tainted ones; FAIL on a control that re-declares a target's
+  name).
 
 ## Earlier -- STAGE 3 CAPSTONE: RH VERIFIED IN A BOX (Turing-style, NOT a proof of RH)
 
@@ -99,7 +231,9 @@
   to the curvature-sign setting; the transcendental-enclosure emitter ships the
   rational log face only (the trig/`C₀` face is deferred, refused at cert time).
   Attribution now appears in the emitted `.lean` headers, the generator
-  docstrings, and the top-level [`NOTICE.md`](../NOTICE.md). This is *not* the
+  docstrings, and the top-level
+  [`NOTICE.md`](https://github.com/DrMurphyIsIn/Arda/blob/main/NOTICE.md) (stayed in Arda, at
+  the Arda repo root rather than under `telperion/`). This is *not* the
   same project as AXLE (arXiv:2606.26442, an engineering-patterns source);
   `conjecture1_proved = False`.
 ## Unreleased — Analytic cert structures (Tasks 1–5)
@@ -993,12 +1127,12 @@ campaign's decisive maneuver as a tool: interpolate an integer grid axis
 continuously and hunt for exact violations; ARITHMETIC verdict with witness
 means no smooth certificate can close the family; (3) the adversarial hunt
 (`telperion hunt`) — exact-rational minimization in three modes: coordinate
-descent, GA with memetic descent refinement (a genetic algorithm's
+descent, GA with memetic descent refinement (the Arda evolution engine's
 transferable core), and a MAP-Elites quality-diversity archive returning
 DIVERSE near-tight points (tie varieties have many points; a pure minimizer
 finds one — demonstrated: both basins of a bimodal tie landscape recovered
 exactly). diagnose escalates from sampling to hunting before concluding
-NOT_POLYA. Deliberately not included: compiled kernels (audit surface),
+NOT_POLYA. Deliberately not ported from Arda: Rust kernels (audit surface),
 island/climate machinery (overkill). Named future step: pluggable hunt
 domains (the origin hunted over TREES via Prufer sequences).
 

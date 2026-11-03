@@ -283,6 +283,26 @@ REGISTRY: dict[str, SensitivityStance] = {
                                    # one ulp and that node's _calc decide is false, so the kernel
                                    # rejects it.  See negctrl_adapters/adapter_scaled_interval_eval.py.
                                    neg_control=NegControlStance(NEG_CONTROL_ADAPTER)),
+    "NatRootBracketTableEmitter": _S(CERTIFICATE_SENSITIVE,
+                                     "kernel-decided q-th-root brackets of a rational power: the "
+                                     "emitted theorem carries the SUPPLIED naturals L, U (and, on "
+                                     "the table face, two List ℕ of them per block plus the block "
+                                     "sums) as literal witnesses of `L^q m^p <= S^q <= U^q m^p`; "
+                                     "the kernel re-decides each fact (`decide +kernel`) and the "
+                                     "once-proved NatRootBracket prelude lifts it to `L/S <= "
+                                     "m^(-p/q) <= U/S` (natural or rational base, either sign) and "
+                                     "to the blocked range sum ∑ (i+1)^(-p/q) (sum_block_lo_neg/"
+                                     "hi_neg + sum_range_chunk + linarith).  A forged entry (U := L "
+                                     "on a non-exact bracket, or one table entry +1) makes its "
+                                     "_fact false and the kernel rejects it.  certify REFUSES a "
+                                     "supplied endpoint that fails the exact integer fact, p or q "
+                                     "or scale < 1, a non-positive base, floats, a block above the "
+                                     "measured depth cap and a term count not a multiple of the "
+                                     "block.  Finite arithmetic facts about rational powers and "
+                                     "their partial sums; nothing about RH (conjecture1_proved = "
+                                     "False)",
+                                     # See negctrl_adapters/adapter_nat_root_bracket_table.py.
+                                     neg_control=NegControlStance(NEG_CONTROL_ADAPTER)),
     "ExpThresholdEmitter": _S(STRUCTURALLY_NONVACUOUS,
                              "threshold-to-exponential domination via `1 + t <= e^t` "
                              "(Real.add_one_le_exp): a bundle reads a nested-max threshold "
@@ -630,6 +650,30 @@ REGISTRY: dict[str, SensitivityStance] = {
                                            # pair (margin -+ 1/1000) runs in the tests.  See
                                            # negctrl_adapters/adapter_factored_endpoint_enclosure.py.
                                            neg_control=NegControlStance(NEG_CONTROL_ADAPTER)),
+    "QuadraticOrderRootTableEmitter": _S(CERTIFICATE_SENSITIVE,
+                                         "Kummer-Dedekind faces of a monogenic quadratic order "
+                                         "X^2 - t X + c (kind quadratic_order_root_table): per "
+                                         "prime p one of RAMIFIED (p | 4c - t^2), SPLIT "
+                                         "(IsRootMod t c p y: a residue y with p | y^2 - t y + c) "
+                                         "or INERT (forall z : ZMod p, z^2 - t z + c != 0), each "
+                                         "decided by the kernel from the literals; split primes "
+                                         "with 4p <= d and p != c are class-number witnesses "
+                                         "(IsWitness t c p y, then classNumber K != 1 under the "
+                                         "QuadInt hypothesis).  The residue y IS a corruptible "
+                                         "witness: forge it and the divisibility decide is false, "
+                                         "so the stance is certificate-sensitive even though the "
+                                         "kernel recomputes everything.  certify REFUSES t "
+                                         "outside {0, 1}, c < 1, floats, composite or repeated "
+                                         "primes, and inert primes above the ZMod-decide cap.  "
+                                         "Splitting facts about explicit quadratic orders; "
+                                         "nothing about RH (conjecture1_proved = False)",
+                                         # Kernel control: t = 0, c = 5, p = 3 with the root
+                                         # forged to y = 0 (3 does not divide 0 + 5); the true
+                                         # twin y = 1 compiles.  The structural control (drop
+                                         # p != c and the soundness lemma is FALSE at d = 8) is
+                                         # the prelude theorem not_isWitness_two_two.  See
+                                         # negctrl_adapters/adapter_quadratic_order_root_table.py.
+                                         neg_control=NegControlStance(NEG_CONTROL_ADAPTER)),
     "GapBudgetMultiplicityEmitter": _S(STRUCTURALLY_NONVACUOUS,
                                        "tangent-price GAP BUDGET pruning of a multiset "
                                        "optimisation (kind gap_budget_multiplicity): from a "
@@ -770,6 +814,22 @@ REGISTRY: dict[str, SensitivityStance] = {
     "FiniteDecideEmitter": _S(STRUCTURALLY_NONVACUOUS,
                               "a finite proposition discharged by the Lean kernel "
                               "`decide` — decidable, no corruptible certificate"),
+    "RangeCompletenessEmitter": _S(STRUCTURALLY_NONVACUOUS,
+        "range-completeness face of finite_decide (CN-1 survey N6): `∀ m ∈ Finset.range N, "
+        "P' m → guards → m ∉ excl → m ∈ L` by `decide +kernel`, plus the once-proved bridge "
+        "`Squarefree m → SqfBelow K m` and the optional length / nodup / soundness companions. "
+        "The list L IS the statement, not a witness FOR it: the kernel re-decides every "
+        "membership, so there is no separately-supplied identity to corrupt and the shape is "
+        "structural.  certify REFUSES a false coverage (names the uncovered m), a VACUOUS "
+        "coverage (no m in the range satisfies the guards -- the one way this shape can be "
+        "empty), a surrogate bound with K^2 <= N, a repeated element when nodup is requested, "
+        "an element outside the guarded set when soundness is requested, and floats.  A finite "
+        "decidability fact about an explicit list; nothing about RH (conjecture1_proved = False)",
+        # Structural, yet a kernel control exists and is demonstrated: drop one element of L
+        # (the largest squarefree below N) and the coverage theorem's `decide +kernel` is
+        # false, so the kernel rejects it; the unmodified twin compiles.  See
+        # negctrl_adapters/adapter_range_completeness.py.
+        neg_control=NegControlStance(NEG_CONTROL_ADAPTER)),
     "PolyaZerosEmitter": _S(STRUCTURALLY_NONVACUOUS,
                             "Castle–Powers–Reznick Pólya-with-zeros homogeneous "
                             "lift; positivity (zeros allowed on faces)"),
@@ -787,6 +847,20 @@ REGISTRY: dict[str, SensitivityStance] = {
         "Affine-in-parameter endpoint collapse: abstract core proved by nlinarith from the algebraic identity (hi-lo)(A+muB)=(hi-mu)(A+loB)+(mu-lo)(A+hiB)"),
     "AlgebraicBracketEmitter": _S(STRUCTURALLY_NONVACUOUS,
         "Rigorous-rational-enclosure shape: lo,a,hi ARE the statement, not a separate cofactor. norm_num decides the three pure-rational side-goals"),
+    "BohrMollerupGammaRatioEmitter": _S(CERTIFICATE_SENSITIVE,
+        "LO <= Real.Gamma x1 / Real.Gamma x2 <= HI at rationals in (0,1) by the Bohr-Mollerup "
+        "bounds: the witness is the four q-th-root bracket integers (l1 u2 u3 l4 at a scale S) and "
+        "the two Nat comparisons LOn*u2*gB <= LOd*n*l1*gA, HId*u3*gA <= HIn*n*l4*gB, all decided by "
+        "`decide +kernel` against the kernel-computed blocked products gA gB; a forged bracket or a "
+        "claim outside the certified enclosure makes a Nat fact FALSE and the kernel rejects it. "
+        "certify REFUSES (ValueError, not a printed flag) a claim the exact comparisons do not "
+        "imply.  One ratio of Gamma values; nothing about class numbers or RH "
+        "(conjecture1_proved = False)",
+        # Kernel control (witness forgery): l1 raised by one with the claims unchanged, so the
+        # root inequality behind hA is a false Nat fact; a second control forges the claim (LO :=
+        # HI, above the true value), so key_lo is false.  See
+        # negctrl_adapters/adapter_bohr_mollerup_gamma_ratio.py.
+        neg_control=NegControlStance(NEG_CONTROL_ADAPTER)),
     "BilinearCornerBoxEmitter": _S(STRUCTURALLY_NONVACUOUS,
         "Worst-corner box positivity: reusable affine-min-at-corners lemma closed by sign-cased mul_nonneg/nlinarith + 4 corner facts each norm_num-recomputed"),
     "BoxRobustEmitter": _S(STRUCTURALLY_NONVACUOUS,

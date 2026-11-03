@@ -4,7 +4,7 @@ conjecture1_proved = False.  Tooling.
 
 THE BUG CLASS.  WALL-3 T's b_twist_real_g.py was a parametrised copy of b_twist_real.py.  The copy kept the
 comparison literal B_float = 1.0376701213616086, which is track B's residue for gamma0 = 14.134725, so the
-gamma0 = 21.02204 certificate compared its Arb residue against the wrong object's value (found in review; fixed in
+gamma0 = 21.02204 certificate compared its Arb residue against the wrong object's value (found by bb; fixed in
 545b21697).  The fix: a comparison against a reference value reads that value from the referenced artefact, and the
 certificate records which artefact (path, key, sha256).
 
@@ -70,7 +70,7 @@ def compare_ball(ball, ref: Reference, slack: float = 0.0) -> dict:
     """Does the arb ``ball`` (widened by ``slack``) contain the reference value?  ARB comparison:
     contains iff |mid(ball) - v| <= rad(ball) + slack, with |mid - v| bounded above (so 'contains' is never claimed
     falsely).  The pre-fix test, |ball - v|.upper() <= rad + slack, counted the radius twice: it reduced to
-    |mid - v| + rad <= rad + ... and reported [0.9, 1.1] as NOT containing 1.05 (review of PR #744)."""
+    |mid - v| + rad <= rad + ... and reported [0.9, 1.1] as NOT containing 1.05 (bb, review of PR #744)."""
     from flint import arb
     v = arb(repr(float(ref.value))) if not isinstance(ref.value, str) else arb(ref.value)
     contains = bool(abs(arb(ball.mid()) - v).upper() <= ball.rad() + slack)

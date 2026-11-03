@@ -157,8 +157,8 @@ _SPECIAL_KINDS = (
     # separable-convex (min/homogeneous) extremum.
     "symmetric_quad", "polytope_max", "second_order", "integrality_gate",
     "domination_ratio", "achievability", "separable_convex",
-    # Objective-degeneracy (scale invariance / parameter cancellation) and
-    # concave-stationary-max certificate shapes (2026-09-02).
+    # Trading-derived certificate shapes (2026-09-02): objective-degeneracy
+    # (leverage↔position_size Sharpe homogeneity) + Kelly concave-stationary max.
     "scale_invariance", "concave_stationary_max",
     # Open-front build-out (2026-09-02): symbolic-in-n d=2 moment-matrix PSD
     # (three-piece completing-the-square). (separable-convex MAX/vertex ships as a
@@ -435,6 +435,22 @@ _SPECIAL_KINDS = (
     # {+, -, *, integer powers, exp}, every box recomputed by `decide +kernel` and lifted to R
     # by once-proved mem_* lemmas (the ScaledInterval prelude).  Nothing about RH.
     "scaled_interval_eval",
+    # quadratic_order_root_table (2026-10-22, CN-1 survey N3): Kummer-Dedekind split / inert /
+    # ramified faces of a monogenic quadratic order X^2 - t X + c, each a pure-N fact decided by
+    # the kernel, consumed by the QuadraticOrderRoot prelude; split primes with 4p <= d, p != c
+    # are class-number witnesses (h != 1).  Nothing about RH.
+    "quadratic_order_root_table",
+    # nat_root_bracket_table (2026-10-22, CN-1 emitter survey N1): kernel-decided ℕ facts
+    # `L^q m^p <= S^q <= U^q m^p` bracketing a rational power m^(+-p/q), singly or as blocked
+    # `List ℕ` tables with block sums, lifted to ℝ by the once-proved NatRootBracket prelude.
+    # Finite arithmetic facts about rational powers and their partial sums; nothing about RH.
+    "nat_root_bracket_table",
+    # range_completeness_decide (2026-10-22, CN-1 emitter survey N6, a face of finite_decide):
+    # "every m < N satisfying the guards is in the explicit list", `decide +kernel` over
+    # `Finset.range N`, with the surrogate-predicate bridge (Squarefree -> SqfBelow K) and the
+    # optional length / nodup / soundness companions.  A finite decidability fact; nothing
+    # about RH.
+    "range_completeness_decide",
     # exp_threshold (2026-09-22, SHAPES_AUDIT_48H section 2 rank 5; B N2, C 4.5): from a rational
     # or symbolic threshold on the Gaussian width to exponential domination via `1 + t <= e^t`
     # (linear / log bundles reading a nested-max threshold with the `max 1` guard folded in, plus
@@ -517,6 +533,10 @@ _SPECIAL_KINDS = (
     # the B D7 cast face `p = ((P : R) : C)` (`push_cast; ring`, then `Complex.ofReal_re`).
     # Split computed by sympy, re-verified by an independent exact engine; nothing about RH.
     "complex_re_im_split",
+    # Emitter survey N2 (2026-10-22): a kernel-checked rational enclosure of a ratio of
+    # Real.Gamma values at rational points in (0, 1) by the Bohr-Mollerup bounds, an exact
+    # blocked range product and four q-th-root brackets.  Nothing about RH.
+    "bohr_mollerup_gamma_ratio",
 )
 
 # kind -> "module:certify_point_fn" for the generic (family.special) emitters.
@@ -783,6 +803,18 @@ _SPECIAL_DISPATCH = {
     "scaled_interval_eval":
         ("emit_scaled_interval_eval", "certify_scaled_interval_eval_point",
          "ScaledIntervalEvalEmitter"),
+    # quadratic_order_root_table (kernel-decided Kummer-Dedekind faces of a quadratic order).
+    "quadratic_order_root_table":
+        ("emit_quadratic_order_root_table", "certify_quadratic_order_root_table_point",
+         "QuadraticOrderRootTableEmitter"),
+    # nat_root_bracket_table (kernel-decided q-th-root brackets of m^(+-p/q), single and blocked).
+    "nat_root_bracket_table":
+        ("emit_nat_root_bracket_table", "certify_nat_root_bracket_table_point",
+         "NatRootBracketTableEmitter"),
+    # range_completeness_decide (kernel-decided coverage of a guarded range by an explicit list).
+    "range_completeness_decide":
+        ("emit_range_completeness", "certify_range_completeness_point",
+         "RangeCompletenessEmitter"),
     # exp_threshold (threshold-to-exponential-domination bundles and atoms, Real.add_one_le_exp).
     "exp_threshold":
         ("emit_exp_threshold", "certify_exp_threshold_point", "ExpThresholdEmitter"),
@@ -835,6 +867,10 @@ _SPECIAL_DISPATCH = {
     "complex_re_im_split":
         ("emit_complex_re_im_split", "certify_complex_re_im_split_point",
          "ComplexReImSplitEmitter"),
+    # Emitter survey N2: Bohr-Mollerup Gamma-ratio enclosures (Real.Gamma at rational points).
+    "bohr_mollerup_gamma_ratio":
+        ("emit_bohr_mollerup_gamma_ratio", "certify_bohr_mollerup_gamma_ratio_point",
+         "BohrMollerupGammaRatioEmitter"),
 }
 
 

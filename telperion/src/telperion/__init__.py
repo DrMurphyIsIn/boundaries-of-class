@@ -6,6 +6,9 @@ trusted component.  A defective certificate manifests as a compile failure,
 never a false theorem.  See docs/METHODOLOGY.md.
 """
 
+# Stays 0.1.6 until the first standalone release: it feeds the provenance hash and the
+# header stamped into every emitted file, so bumping it would re-stamp every frozen example
+# (see CHANGELOG 0.2.0.dev0).
 __version__ = "0.1.6"
 
 from .certify import (  # noqa: F401
@@ -116,6 +119,23 @@ from .emit_scaled_interval_eval import (  # noqa: F401
     scaled_interval_eval_certificate, scaled_interval_eval_family,
     certify_scaled_interval_eval_point, scaled_interval_prelude_lean,
     scaled_interval_prelude_body,
+)
+from .emit_quadratic_order_root_table import (  # noqa: F401
+    QuadraticOrderRootTableEmitter, QuadraticOrderRootTableCert, PrimeFace,
+    quadratic_order_root_table_certificate, quadratic_order_root_table_family,
+    certify_quadratic_order_root_table_point, verify_certificate as verify_quadratic_order_root_table,
+    quadratic_order_root_prelude_lean, quadratic_order_root_prelude_body,
+)
+from .emit_nat_root_bracket_table import (  # noqa: F401
+    NatRootBracketTableEmitter, NatRootBracketCert, NatRootBracketTableCert,
+    nat_root_bracket_certificate, nat_root_bracket_table_certificate,
+    nat_root_bracket_table_family, certify_nat_root_bracket_table_point,
+    nat_root_bracket_prelude_lean, nat_root_bracket_prelude_body, nat_iroot,
+)
+from .emit_range_completeness import (  # noqa: F401
+    RangeCompletenessEmitter, RangeCompletenessCert, SquarefreeSurrogate,
+    range_completeness_certificate, range_completeness_family,
+    certify_range_completeness_point,
 )
 from .emit_exp_threshold import (  # noqa: F401
     ExpThresholdEmitter, ExpThresholdCert, ExpThresholdStep, exp_threshold_certificate,
@@ -311,6 +331,10 @@ from .emit_bilinear_corner import (  # noqa: F401
 )
 from .emit_algebraic_bracket import (  # noqa: F401
     AlgebraicBracketEmitter, algebraic_bracket_certificate, algebraic_bracket_family,
+)
+from .emit_bohr_mollerup_gamma_ratio import (  # noqa: F401
+    BohrMollerupGammaRatioEmitter, bohr_mollerup_gamma_ratio_certificate,
+    bohr_mollerup_gamma_ratio_family, bohr_mollerup_prelude_lean,
 )
 from .emit_halfplane_disk import (  # noqa: F401
     HalfPlaneDiskEmitter, halfplane_disk_certificate, halfplane_disk_family,
@@ -765,7 +789,8 @@ from .negative_control_harness import (  # noqa: F401
 )
 from . import negctrl_adapters  # noqa: F401  (registers all first-party adapters)
 
-# The Brualdi-Goldwasser research lab lives under telperion.bg (opt-in).  The bg-named modules
-# `bg_bulk_discharge` and `bg_upper_bound` (composed reduction skeleton) are opt-in too -- import them
-# directly (`from telperion.bg_upper_bound import UpperBoundReduction`), not via `import telperion`, so the
-# core/bg boundary (test_core_boundary) stays clean.
+# Research labs (telperion.bg and the others listed in `telperion.boundary.LABS`) live in their
+# consumer repos, not here, and are opt-in.  The bg-named modules `bg_bulk_discharge` and
+# `bg_upper_bound` (composed reduction skeleton) are opt-in too -- import them directly
+# (`from telperion.bg_upper_bound import UpperBoundReduction`), not via `import telperion`, so the
+# core/lab boundary (test_engine_boundary) stays clean.

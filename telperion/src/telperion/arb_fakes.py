@@ -4,7 +4,7 @@ conjecture1_proved = False.  Nothing here is progress on RH.  The fakes are func
 functional equation and OFF-line zeros; certifying those zeros (and checking that RH-type emitters refuse
 them) calibrates the instruments, it says nothing about zeta.
 
-OBJECTS (normalisations match the WALL-2 calibration harness and arb_dh):
+OBJECTS (normalisations match ~/rh-team/wall2/H/harness.py and arb_dh):
 
     zeta   Riemann zeta.
     EP5    zeta L(chi_-20) + L(chi_-4) L(chi_5) = sum' (m^2 + 5 n^2)^{-s}            (Epstein, a(1) = 2)
@@ -102,7 +102,7 @@ def _acb_point(re: Fraction, im: Fraction):
 
 def _frac_interval(x):
     """Outward exact Fraction interval of an arb ball."""
-    from .rh_jensen.coefficients import _arb_ball_to_fractions
+    from .arb_enclosure import _arb_ball_to_fractions
     return _arb_ball_to_fractions(x)
 
 

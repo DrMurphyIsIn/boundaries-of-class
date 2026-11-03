@@ -1,6 +1,7 @@
 # Second-pass emitter catalog — zeta-23-lean (2026-09-08)
 
-Phase 5 of the HermitianMomentInertia build. A read-only dive over the parts of
+Phase 5 of the HermitianMomentInertia build (see
+`~/.claude/plans/elegant-toasting-cake.md`). A read-only dive over the parts of
 `anthropics/zeta-23-lean` NOT covered by the planned families
 (HermitianMomentInertia: rank_trace / Sylvester inertia / von Neumann trace /
 Weyl+Cauchy-Schwarz count / TwoMomentCount; EnclosureGrid), cataloging additional

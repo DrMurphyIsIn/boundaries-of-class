@@ -906,6 +906,22 @@ def _heavy_certificates(node_toml: Path) -> bool:
         return False
 
 
+def _config_heavy(node_toml: Path) -> bool:
+    """Heavy for the kernel-policy config check (spec 5.1): `heavy_certificates` OR
+    `judge_via = "heavy"`. These are the two render-time disjuncts of provenance.needs_rejudge
+    (Ruling 0b-9); its third, `judged_lean_kernel_only`, depends on a recorded [comparator] result
+    and is deliberately not used here, so this check is never looser than needs_rejudge. A
+    rendered config may have nanoda off only where a local second-kernel re-judge is mandatory."""
+    return _heavy_certificates(node_toml) or _judge_via(node_toml) == "heavy"
+
+
+def _check_config(slug: str, config, *, node_heavy: bool) -> None:
+    from ..checks.kernel_policy import judge_config_problems
+    problems = judge_config_problems(config, node_heavy=node_heavy)
+    if problems:
+        raise JudgeError(f"{slug}: " + "; ".join(problems))
+
+
 #: The dispatch-only workflow that judges `judge_via = "heavy"` nodes.
 HEAVY_WORKFLOW = "missions-comparator-heavy.yml"
 
@@ -957,7 +973,7 @@ def _sha256(path: Path) -> str:
 
 def build_bundle(telperion_root: Path, island: str, *, enable_nanoda: bool = True,
                  only: Optional[Sequence[str]] = None, heavy: bool = False,
-                 pending: bool = False) -> Bundle:
+                 pending: bool = False, force_nanoda: bool = False) -> Bundle:
     """Render the challenge bundle.
 
     Per-PR mode (heavy=False): nodes with `judge_via = "heavy"` are EXCLUDED BY RULE (listed in
@@ -968,6 +984,9 @@ def build_bundle(telperion_root: Path, island: str, *, enable_nanoda: bool = Tru
     Pending mode (pending=True): ALSO render draft and open nodes whose artifact is on the
     island (`Bundle.pending` lists them; each bridge module says so). Like a heavy bundle it is
     written to a temp `--out`, never committed: a pass on it is pre-grant evidence only.
+    force_nanoda=True turns the second kernel back ON for `heavy_certificates` nodes (and their
+    compose parts) that would otherwise render Lean-kernel-only: a local re-judge on a machine
+    big enough to run nanoda. It changes rendering only, never the committed per-PR bundle.
 
     A MATERIALIZED_ROOT_ISLANDS island may have no proved node yet; its committed bundle is then
     empty (the root says so, MANIFEST.json lists no node) instead of an error, so the island
@@ -1025,7 +1044,10 @@ def build_bundle(telperion_root: Path, island: str, *, enable_nanoda: bool = Tru
                     node=a.node, campaign=a.campaign, spec=spec, lean_dir=lean_dir,
                     guards=guards_for(lean_dir, island, guards, spec.module),
                     vocab_guard=vocab_guard, statement_text=statement_text,
-                    artifact_sha256=_sha256(a.artifact), statement_sha256=_sha256(stmt_path))
+                    artifact_sha256=_sha256(a.artifact), statement_sha256=_sha256(stmt_path),
+                    force_nanoda=force_nanoda and enable_nanoda,
+                    node_heavy=_config_heavy(telperion_root / "missions" / a.campaign / "nodes"
+                                             / f"{a.node}.toml"))
                 continue
         status = _node_status(telperion_root / "missions" / a.campaign / "nodes"
                               / f"{a.node}.toml")
@@ -1059,10 +1081,12 @@ def build_bundle(telperion_root: Path, island: str, *, enable_nanoda: bool = Tru
         # the flag, and fatal on any branch that sets it (cl/kwin, cl/kwin2).
         node_heavy = _heavy_certificates(
             telperion_root / "missions" / a.campaign / "nodes" / f"{a.node}.toml")
-        node_nanoda = enable_nanoda and not node_heavy
+        node_nanoda = enable_nanoda and (force_nanoda or not node_heavy)
         cfg = challenge_config(
             challenge_module=chal, solution_module=chal, theorem_names=[bridge],
             permitted_axioms=CLEAN_AXIOMS, enable_nanoda=node_nanoda)
+        _check_config(f"{a.campaign}/{a.node}", cfg, node_heavy=_config_heavy(
+            telperion_root / "missions" / a.campaign / "nodes" / f"{a.node}.toml"))
         challenges.append(Challenge(
             slug=a.node, campaign=a.campaign, theorem=a.theorem, solution_module=sol,
             challenge_module=chal, bridge_theorem=bridge, nanoda=node_nanoda,
@@ -1082,11 +1106,16 @@ def build_bundle(telperion_root: Path, island: str, *, enable_nanoda: bool = Tru
 
 def compose_parts(*, node: str, campaign: str, spec, lean_dir: Path, guards: Sequence[str],
                   vocab_guard: bool, statement_text: str, artifact_sha256: str,
-                  statement_sha256: str) -> List[Challenge]:
+                  statement_sha256: str, force_nanoda: bool = False,
+                  node_heavy: bool = False) -> List[Challenge]:
     """The challenges of a COMPOSITIONAL judgement (see compose.py): one per segment, plus the
-    implication.  Every part is Lean-kernel-only: the segments carry the heavy certificates, and
-    one kernel mode per verdict keeps the record honest."""
+    implication.  Every part is Lean-kernel-only by default: the segments carry the heavy
+    certificates, and one kernel mode per verdict keeps the record honest. force_nanoda=True
+    (the local re-judge override; already folded with `enable_nanoda` by the caller) turns the
+    second kernel back on for every part. node_heavy is the node's `_config_heavy` value; every
+    part's config is checked against it (spec 5.1)."""
     from .compose import compose_slug, seg_slug
+    part_nanoda = bool(force_nanoda)
     out: List[Challenge] = []
     for nm, stmt, thm, mod in spec.segments:
         slug = seg_slug(node, nm)
@@ -1094,14 +1123,15 @@ def compose_parts(*, node: str, campaign: str, spec, lean_dir: Path, guards: Seq
         br = bridge_theorem_name(slug)
         out.append(Challenge(
             slug=slug, campaign=campaign, theorem=thm, solution_module=mod,
-            challenge_module=chal, bridge_theorem=br, nanoda=False,
+            challenge_module=chal, bridge_theorem=br, nanoda=part_nanoda,
             challenge_text=render_segment_challenge(node=node, campaign=campaign, name=nm,
                                                     statement=stmt, theorem=thm, module=mod),
             config=challenge_config(challenge_module=chal, solution_module=chal,
                                     theorem_names=[br], permitted_axioms=CLEAN_AXIOMS,
-                                    enable_nanoda=False),
+                                    enable_nanoda=part_nanoda),
             artifact_sha256=artifact_sha256, statement_sha256=statement_sha256,
             part=f"seg:{nm}", exports=(stmt,), node=node))
+        _check_config(f"{campaign}/{slug}", out[-1].config, node_heavy=node_heavy)
     slug = compose_slug(node)
     chal = f"MissionChallenges.{slug}"
     br = bridge_theorem_name(slug)
@@ -1116,11 +1146,12 @@ def compose_parts(*, node: str, campaign: str, spec, lean_dir: Path, guards: Seq
         hypotheses=[(f"b_{nm}", stmt) for nm, stmt, _t, _m in spec.segments])
     out.append(Challenge(
         slug=slug, campaign=campaign, theorem=spec.theorem, solution_module=spec.module,
-        challenge_module=chal, bridge_theorem=br, nanoda=False, challenge_text=text,
+        challenge_module=chal, bridge_theorem=br, nanoda=part_nanoda, challenge_text=text,
         config=challenge_config(challenge_module=chal, solution_module=chal, theorem_names=[br],
-                                permitted_axioms=CLEAN_AXIOMS, enable_nanoda=False),
+                                permitted_axioms=CLEAN_AXIOMS, enable_nanoda=part_nanoda),
         artifact_sha256=artifact_sha256, statement_sha256=statement_sha256,
         part="compose", exports=tuple(spec.segment_statements), node=node))
+    _check_config(f"{campaign}/{slug}", out[-1].config, node_heavy=node_heavy)
     return out
 
 
@@ -1186,12 +1217,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     help="bundle directory (default: telperion/missions/judge/<island>)")
     ap.add_argument("--check", action="store_true",
                     help="verify the committed bundle matches the registry; write nothing")
-    ap.add_argument("--no-nanoda", action="store_true", help="enable_nanoda = false")
+    ap.add_argument("--no-nanoda", action="store_true",
+                    help="enable_nanoda = false; allowed only for heavy nodes "
+                         "(heavy_certificates or judge_via=heavy), spec 5.1 kernel policy")
     ap.add_argument("--only", nargs="*", default=None, help="restrict to these node slugs")
     ap.add_argument("--heavy", action="store_true",
                     help="render ONLY the --only nodes, each of which must be judge_via = \"heavy\" "
                          "(refused otherwise); write it with --out to a temp dir, never commit it. "
                          "Without --heavy, judge_via = \"heavy\" nodes are excluded by rule.")
+    ap.add_argument("--force-nanoda", action="store_true",
+                    help="with --heavy: render nanoda ON even for heavy_certificates nodes "
+                         "(local re-judge on a large machine; never committed)")
     ap.add_argument("--pending", action="store_true",
                     help="ALSO render draft and open nodes whose artifact is on the island (pre-grant "
                          "judging); write it with --out to a temp dir, never commit it. A pass on "
@@ -1208,9 +1244,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--shard", default=None, metavar="I/N",
                     help="with --configs: only nodes whose sorted index mod N == I")
     args = ap.parse_args(list(argv) if argv is not None else None)
+    if args.force_nanoda and not args.heavy:
+        print("::error::--force-nanoda requires --heavy", file=sys.stderr)
+        return 2
     try:
         bundle = build_bundle(args.telperion, args.island, enable_nanoda=not args.no_nanoda,
-                              only=args.only, heavy=args.heavy, pending=args.pending)
+                              only=args.only, heavy=args.heavy, pending=args.pending,
+                              force_nanoda=args.force_nanoda)
     except JudgeError as e:
         print(f"::error::{e}", file=sys.stderr)
         return 2

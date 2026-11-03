@@ -342,6 +342,35 @@ def cmd_lint_lean(args) -> int:
     return 1 if fatal else 0
 
 
+def cmd_lint_provenance(args) -> int:
+    """Provenance-header lint for ported files (spec 7.4): every file this counts as
+    "ported" -- a `ported`/`adapted`/`copied from` mention in its own first 30 lines, or
+    a name in `<dir>/PORTED.toml` -- must carry a `-- Provenance: repo=... file=...
+    commit=<40-hex>` line in that same window. Exits 1 and prints every problem
+    `missions.process.provenance_problems` reports; 0 and a single OK line otherwise.
+
+    Fix round 1 (Minor): a *dir* that does not exist, or that exists but is not a
+    directory, used to print a silent "OK" (`os.walk` on a missing path yields
+    nothing, and `_load_ported_toml_safe`'s FileNotFoundError branch reports no
+    problem either) -- a typo'd path would pass as cleanly as a real, clean campaign,
+    exactly the kind of thing that could mask a CI misconfiguration. That now exits 2
+    with a one-line message naming the path, before `provenance_problems` is ever
+    called."""
+    from .missions.process import provenance_problems
+
+    root = Path(args.dir)
+    if not root.is_dir():
+        print(f"lint-provenance {root}: not a directory")
+        return 2
+    problems = provenance_problems(root)
+    if not problems:
+        print(f"lint-provenance {root}: OK (no provenance problems)")
+        return 0
+    for p in problems:
+        print(f"{root}: {p}")
+    return 1
+
+
 def cmd_package(args) -> int:
     """Self-contained reviewer bundle: family, frozen Lean, certificates JSON,
     the standalone rechecker, and REVIEWING.md with the independent checks."""
@@ -638,6 +667,157 @@ def cmd_audit(args) -> int:
     report = audit_lean_file(args.file)
     print(report.render())
     return 0 if report.ok else 1
+
+
+def cmd_audit_closure(args) -> int:
+    """Kernel-level closure audit of named theorems in a built Lake project.
+
+    By default the audit runs as a KERNEL-REPLAY callback (closure_audit.run_closure_audit_replayed, step 5 Task 7):
+    the project's modules are read as data and kernel-replayed into the pinned trusted env (--trusted-env, default
+    $TELPERION_LEAN_ENV, checked against its trusted manifest), never imported, and no lake runs. The JSON carries
+    `isolated: true` and the replay's `olean_sha256`/`olean_closure`, which `mission checks-record` requires to equal
+    the probe's and the fingerprint's. `--legacy-import` runs the old script that IMPORTS the submission with
+    `lake env lean` (NOT ISOLATED: the submission's lakefile, initializers and elaborators run in the audit and can
+    forge it); its JSON says `isolated: false`, and `mission checks-record` refuses it for nodes created on or after
+    the cutoff.
+
+    Exit 0 PASS, 1 FAIL (a forbidden constant/module in the closure, a non-allowed axiom, a missing target, an
+    untrusted axiom or a kernel rejection refused by the replay, or a scan hit with --fail-on-scan-hit), 2 when the
+    audit could not run or Lean died before a verdict.  The JSON (--json) is the record; the terminal gets a summary.
+    """
+    import json as _json
+    import shlex
+
+    from . import closure_audit
+    from .closure_audit import (AuditSpec, ClosureAuditError, DEFAULT_ABSENT_CONSTANTS,
+                                DEFAULT_LIBRARY_ROOTS, PLACEHOLDER_NONCE, render_audit_callback,
+                                render_audit_script)
+    from .comparator import CLEAN_AXIOMS
+
+    if args.spec:
+        try:
+            raw = _json.loads(Path(args.spec).read_text(encoding="utf-8"))
+            spec = AuditSpec(**{k: (tuple(v) if isinstance(v, list) else v) for k, v in raw.items()})
+        except (OSError, ValueError, TypeError) as exc:
+            print(f"audit-closure: cannot read spec {args.spec}: {exc}")
+            return 2
+    else:
+        if not args.imports or not args.target:
+            print("audit-closure: pass --spec FILE, or --import MODULE... and --target NAME...")
+            return 2
+        try:
+            spec = AuditSpec(
+                imports=tuple(args.imports), targets=tuple(args.target),
+                library_roots=tuple(args.library_root) if args.library_root else DEFAULT_LIBRARY_ROOTS,
+                scan_patterns=tuple(args.scan or ()),
+                absent_constants=tuple(args.absent_const) if args.absent_const else DEFAULT_ABSENT_CONSTANTS,
+                absent_module_prefixes=tuple(args.absent_module or ()),
+                allowed_axioms=tuple(args.allow_axiom) if args.allow_axiom else CLEAN_AXIOMS,
+                include_recursors=not args.no_recursors,
+                closure_out=args.closure_out,
+            )
+        except ValueError as exc:
+            print(f"audit-closure: {exc}")
+            return 2
+    if args.script_path and not args.legacy_import:
+        print("audit-closure: --script-path is for --legacy-import only (the replayed audit's script lives in a "
+              "private temp dir)")
+        return 2
+    if args.render_only:
+        try:
+            text = (render_audit_script(spec) if args.legacy_import
+                    else render_audit_callback(spec, PLACEHOLDER_NONCE))
+        except ValueError as exc:
+            print(f"audit-closure: {exc}")
+            return 2
+        Path(args.render_only).write_text(text, encoding="utf-8")
+        what = "audit script" if args.legacy_import else "replay callback"
+        print(f"rendered {what} to {args.render_only} (not run)")
+        return 0
+    try:
+        if args.legacy_import:
+            print("audit-closure: WARNING: --legacy-import IMPORTS the submission with `lake env lean`: NOT ISOLATED. "
+                  "Its lakefile, initializers and elaborators run in the audit process and can forge the verdict. "
+                  "`mission checks-record` refuses this output for nodes created on or after the cutoff; drop "
+                  "--legacy-import for the kernel-replayed audit.", file=sys.stderr)
+            res = closure_audit.run_closure_audit(spec, args.project, wrapper=args.wrapper, timeout=args.timeout,
+                                                  script_path=args.script_path,
+                                                  keep_script=bool(args.script_path))
+        else:
+            res = closure_audit.run_closure_audit_replayed(
+                spec, Path(args.project), wrapper=None if args.wrapper is None else shlex.split(args.wrapper),
+                timeout=args.timeout, **_trust_kwargs(args))
+    except ClosureAuditError as exc:
+        print(f"audit-closure: {exc}")
+        return 2
+    if args.fail_on_scan_hit and (res.scan_hits or res.scan_module_hits):
+        res.failures.append(f"{len(res.scan_hits)} scan hit(s) and {len(res.scan_module_hits)} "
+                            "module-name hit(s) with --fail-on-scan-hit")
+        res.verdict = "FAIL"
+    if args.json:
+        Path(args.json).write_text(res.to_json() + "\n", encoding="utf-8")
+    print(res.render())
+    if not res.verdict:
+        print(res.raw_tail)
+        return 2
+    return 0 if res.ok else 1
+
+
+def _manifest_options_from_args(args):
+    from .freeze_manifest import DEFAULT_INCLUDE_GLOBS, ManifestOptions, parse_kv_pairs
+
+    return ManifestOptions(
+        include_globs=tuple(args.include) if args.include else DEFAULT_INCLUDE_GLOBS,
+        packages_dir=args.packages_dir,
+        tools=parse_kv_pairs(args.tool or (), "tool"),
+        extras=parse_kv_pairs(args.extra or (), "extra"),
+        patches=parse_kv_pairs(args.patch or (), "patch"),
+        include_ignored=bool(args.include_ignored),
+        hash_toolchain_binary=not args.no_toolchain_binary,
+    )
+
+
+def cmd_freeze_manifest(args) -> int:
+    """Pin a Lake project's source state (sources, lake files, toolchain + binary, dependency
+    git state, tool binaries, extra files) as JSON, before a verdict-of-record run."""
+    from .freeze_manifest import ManifestError, dumps_manifest, freeze_manifest, render_text
+
+    try:
+        doc = freeze_manifest(args.project, _manifest_options_from_args(args),
+                              timestamp=not args.no_timestamp)
+    except ManifestError as exc:
+        print(f"freeze-manifest: {exc}")
+        return 2
+    Path(args.out).write_text(dumps_manifest(doc), encoding="utf-8")
+    if args.text:
+        Path(args.text).write_text(render_text(doc), encoding="utf-8")
+    missing = [k for sec in ("lake_files", "files", "tools", "extras") for k, v in doc[sec].items()
+               if v.get("missing")]
+    print(f"manifest written: {args.out}  digest {doc['digest']}  "
+          f"({len(doc['files'])} source files, {len(doc['dependencies'])} dependencies, "
+          f"{len(doc['tools'])} tools, {len(doc['extras'])} extras)")
+    for k in missing:
+        print(f"  MISSING: {k}")
+    return 1 if missing else 0
+
+
+def cmd_verify_manifest(args) -> int:
+    """Re-freeze and diff against a recorded manifest.  Exit 0 unchanged, 1 changed."""
+    from .freeze_manifest import ManifestError, dumps_manifest, parse_kv_pairs, verify_manifest
+
+    try:
+        overrides = dict(parse_kv_pairs(args.tool or (), "tool")) or None
+        diff, new = verify_manifest(args.manifest, args.project, tool_overrides=overrides)
+    except ManifestError as exc:
+        print(f"verify-manifest: {exc}")
+        return 2
+    if args.out:
+        Path(args.out).write_text(dumps_manifest(new), encoding="utf-8")
+    if args.json:
+        import json as _json
+        Path(args.json).write_text(_json.dumps(diff.to_dict(), indent=2) + "\n", encoding="utf-8")
+    print(diff.render())
+    return 0 if diff.unchanged else 1
 
 
 def cmd_benchmark(args) -> int:
@@ -1169,6 +1349,11 @@ def cmd_mission_add(args) -> int:
     print(f"node: {node_path}")
     print(f"statement: {stmt_path}")
     print(f"author: {identity} (session {session})")
+    from .missions.process import freeze_path as _freeze_path
+    if _freeze_path(root).exists():
+        # final review I3: a frozen campaign's every post-cutoff grant is refused until the new node is recorded
+        print(f"{args.campaign} is frozen: record the new node with `telperion mission freeze {args.campaign} --add` "
+              "(add --fingerprints for its statement fingerprint), then commit FREEZE.toml")
     return 0
 
 
@@ -1362,6 +1547,11 @@ def cmd_mission_grant(args) -> int:
     except GateError as exc:
         print(str(exc))
         return 1
+    except Exception as exc:
+        # The gate's readers report an unreadable record as a refusal (process.
+        # _load_freeze_safe); anything that still raises is a refusal too, never a traceback.
+        print(f"Node {slug!r}: grant refused: {type(exc).__name__}: {exc}")
+        return 1
 
     note = ""
     if node.proof is not None and node.proof.via == "reduction":
@@ -1370,6 +1560,283 @@ def cmd_mission_grant(args) -> int:
     if node.grant is not None:
         print(f"grant: artifact sha256 {node.grant.artifact_sha256[:16]}..., gate "
               f"{node.grant.gate_version}, by {node.grant.identity} (session {node.grant.session})")
+    return 0
+
+
+def _statement_fingerprints_for(args, camp_root, only=None):
+    """Step 5 Task 6: `--fingerprints` -> `process.compute_statement_fingerprints` with the Lean
+    options given (trusted env, manifest, olean dirs, memory, wrapper, timeout); None without it."""
+    import shlex
+
+    from .missions.process import compute_statement_fingerprints
+
+    if not getattr(args, "fingerprints", False):
+        return None
+    kw = _trust_kwargs(args)
+    if only is not None:
+        kw["only"] = only
+    if getattr(args, "wrapper", None) is not None:
+        kw["wrapper"] = shlex.split(args.wrapper)
+    if getattr(args, "timeout", None) is not None:
+        kw["timeout"] = args.timeout
+    return compute_statement_fingerprints(camp_root, **kw)
+
+
+def _print_fingerprints_note(campaign: str, doc: dict) -> None:
+    n = len(doc.get("fingerprints") or {})
+    if n:
+        print(f"{campaign}: {n} statement fingerprint(s) recorded in [fingerprints]")
+    else:
+        print(f"{campaign}: no statement fingerprints recorded (no --fingerprints); `mission checks-record` "
+              "and the gate refuse every post-cutoff node until a freeze records them (statement "
+              "fingerprint not frozen)")
+
+
+def _mission_freeze_add(args, camp_root) -> int:
+    """`mission freeze --add` (final review I3): record the nodes added since the freeze, at the unchanged
+    version (process.freeze_add)."""
+    from .missions.process import _current_statement_hashes, _load_freeze, freeze_add
+    from .missions.registry import load_campaign
+
+    try:
+        doc = _load_freeze(camp_root)
+        recorded = set((doc or {}).get("statements") or {})
+        new = set(_current_statement_hashes(camp_root, load_campaign(camp_root))) - recorded
+        fps = _statement_fingerprints_for(args, camp_root, only=new) if doc is not None and new else None
+        out = freeze_add(camp_root, fingerprints=fps)
+    except ValueError as exc:
+        print(str(exc))
+        return 1
+    except Exception as exc:            # final review M2
+        print(f"freeze --add refused: {type(exc).__name__}: {exc}")
+        return 2
+    print(f"{args.campaign}: recorded {len(out['added'])} new node(s) at version {out['version']}: "
+          f"{', '.join(out['added'])}")
+    if not getattr(args, "fingerprints", False):
+        print(f"{args.campaign}: no statement fingerprints recorded for them (no --fingerprints); their "
+              "post-cutoff [checks] are refused until an unfreeze records them")
+    print(f"commit {args.campaign}/FREEZE.toml now: an uncommitted change to the freeze does not count.")
+    return 0
+
+
+def cmd_mission_freeze(args) -> int:
+    from datetime import date as _date
+
+    from .missions.process import freeze, freeze_path, write_deviations_template_if_missing
+    from .missions.provenance import ProvenanceError, git_identity, session_id
+    from .missions.schema import SchemaError
+
+    camp_root = _missions_root(args) / args.campaign
+    if not camp_root.is_dir():
+        print(f"Campaign {args.campaign!r} not found at {camp_root}")
+        return 1
+
+    if getattr(args, "add", False):
+        return _mission_freeze_add(args, camp_root)
+    identity = (getattr(args, "identity", None) or "").strip() or git_identity(camp_root)
+    session = session_id(getattr(args, "session", None))
+    try:
+        already = freeze_path(camp_root).exists() or freeze_path(camp_root).is_symlink()
+        # an already-frozen campaign is refused by `freeze` itself; do not run Lean first
+        fps = None if already else _statement_fingerprints_for(args, camp_root)
+        doc = freeze(camp_root, identity=identity, session=session,
+                    date=_date.today().isoformat(), fingerprints=fps)
+    except (ProvenanceError, SchemaError, ValueError) as exc:
+        print(str(exc))
+        return 1
+    except Exception as exc:            # final review M2: a clean message, never a traceback
+        print(f"freeze refused: {type(exc).__name__}: {exc}")
+        return 2
+
+    print(f"{args.campaign}: frozen {doc['frozen']} by {doc['identity']} "
+          f"(session {doc['session']}); {len(doc['statements'])} statement(s) recorded")
+    _print_fingerprints_note(args.campaign, doc)
+    print(f"commit {args.campaign}/FREEZE.toml now: an uncommitted freeze has no git "
+          "history to verify version bumps and unfreeze entries against, and "
+          "`mission verify` reports that as a problem once this campaign is post-cutoff.")
+
+    # Step 5 Task 3: a freshly frozen campaign otherwise has no DEVIATIONS.md at all, and
+    # every post-cutoff grant afterwards would be refused on "no DEVIATIONS.md" until
+    # someone writes one by hand.
+    if write_deviations_template_if_missing(camp_root):
+        print(f"{args.campaign}/DEVIATIONS.md: wrote the template (no deviations recorded "
+              "yet; edit it, or leave it as `none`).")
+    return 0
+
+
+def cmd_mission_deviations_readback(args) -> int:
+    from datetime import date as _date
+
+    from .missions.process import write_deviations_readback
+    from .missions.provenance import git_identity, session_id
+
+    camp_root = _missions_root(args) / args.campaign
+    if not camp_root.is_dir():
+        print(f"Campaign {args.campaign!r} not found at {camp_root}")
+        return 1
+
+    identity = (getattr(args, "identity", None) or "").strip() or git_identity(camp_root)
+    session = session_id(getattr(args, "session", None))
+    date = (getattr(args, "date", None) or "").strip() or _date.today().isoformat()
+    try:
+        doc = write_deviations_readback(camp_root, identity=identity, session=session, date=date)
+    except ValueError as exc:
+        print(str(exc))
+        return 1
+    except Exception as exc:            # final review M2
+        print(f"deviations-readback refused: {type(exc).__name__}: {exc}")
+        return 2
+
+    print(f"{args.campaign}/DEVIATIONS.md read back by {doc['auditor_identity']} "
+          f"(session {doc['auditor_session']}) on {doc['date']}; ledger sha256 "
+          f"{doc['ledger_sha256'][:16]}...")
+    return 0
+
+
+def cmd_mission_unfreeze(args) -> int:
+    from datetime import date as _date
+
+    from .missions.process import freeze_path, unfreeze
+    from .missions.schema import SchemaError
+
+    camp_root = _missions_root(args) / args.campaign
+    if not camp_root.is_dir():
+        print(f"Campaign {args.campaign!r} not found at {camp_root}")
+        return 1
+
+    try:
+        # what `unfreeze` refuses anyway (no freeze, a self-read-back) is refused before any Lean runs
+        doomed = (not freeze_path(camp_root).exists()
+                  or args.readback_identity.strip().lower() == args.author.strip().lower())
+        doc = unfreeze(camp_root, author=args.author, reason=args.reason,
+                       readback_identity=args.readback_identity,
+                       date=_date.today().isoformat(),
+                       fingerprints=None if doomed else _statement_fingerprints_for(args, camp_root))
+    except (SchemaError, ValueError) as exc:
+        print(str(exc))
+        return 1
+    except Exception as exc:            # final review M2
+        print(f"unfreeze refused: {type(exc).__name__}: {exc}")
+        return 2
+
+    print(f"{args.campaign}: unfrozen to version {doc['version']} by {args.author} "
+          f"(read back by {args.readback_identity}); {len(doc['statements'])} statement(s) "
+          "re-recorded")
+    _print_fingerprints_note(args.campaign, doc)
+    return 0
+
+
+def cmd_mission_audit_file(args) -> int:
+    import shlex
+
+    from .missions.process import audit_targets, render_audit_file
+    from .missions.schema import SchemaError, atomic_write_text
+
+    camp_root = _missions_root(args) / args.campaign
+    if not camp_root.is_dir():
+        print(f"Campaign {args.campaign!r} not found at {camp_root}")
+        return 1
+
+    try:
+        text = render_audit_file(camp_root)
+        modules, theorems = audit_targets(camp_root)
+        out_path = camp_root / "lean" / "Audit.lean"
+        # final review M4: never write through a symlink; replace the file atomically
+        if out_path.is_symlink() or (out_path.exists() and not out_path.is_file()):
+            print(f"{out_path} is a symlink or not a regular file; refusing to write through it")
+            return 1
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(out_path, text)
+    except (SchemaError, ValueError) as exc:
+        print(str(exc))
+        return 1
+    except Exception as exc:            # final review M2: a clean message, never a traceback
+        print(f"audit-file refused: {type(exc).__name__}: {exc}")
+        return 2
+    print(f"{args.campaign}: wrote {out_path}")
+    if theorems:
+        # final review I5: ONE closure audit over every proved node, whose single JSON is what
+        # `mission audit-crosscheck` compares the transcript of Audit.lean with
+        cmd = ["telperion", "audit-closure", "--project", str(camp_root / "lean")]
+        cmd += [a for m in modules for a in ("--import", m)] + [a for t in theorems for a in ("--target", t)]
+        print("the matching closure audit (one run, every proved node):\n  "
+              + " ".join(shlex.quote(c) for c in cmd + ["--json", "closure.json"]))
+    return 0
+
+
+#: Upper bound on a `--print-axioms-out`/`--closure-json` file (fix round 1, Ruling 10,
+#: minor finding): generous for either a `#print axioms` transcript or a closure audit
+#: JSON, small enough that a bogus or truncated path cannot read gigabytes into memory
+#: before `audit-crosscheck` can report a clean error.
+_AUDIT_CROSSCHECK_INPUT_MAX_BYTES = 1 << 24
+
+
+def _read_audit_crosscheck_input(path: Path, *, what: str) -> Optional[str]:
+    """`path.read_text(encoding="utf-8")`, guarded (fix round 1, Ruling 10, minor
+    finding): a size cap before reading, and a clean message -- never a traceback -- on a
+    missing file, an unreadable one, or one that is not valid UTF-8. Returns None (having
+    already printed why) on any problem."""
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        print(f"cannot read {what} {path}: {exc}")
+        return None
+    if size > _AUDIT_CROSSCHECK_INPUT_MAX_BYTES:
+        print(f"cannot read {what} {path}: larger than "
+              f"{_AUDIT_CROSSCHECK_INPUT_MAX_BYTES} bytes")
+        return None
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"cannot read {what} {path}: {exc}")
+        return None
+    except UnicodeDecodeError as exc:
+        print(f"cannot read {what} {path}: not valid UTF-8 ({exc})")
+        return None
+
+
+def cmd_mission_audit_crosscheck(args) -> int:
+    import json as _json
+
+    from .missions.process import crosscheck_axioms, parse_print_axioms
+
+    output = _read_audit_crosscheck_input(args.print_axioms_out, what="--print-axioms-out")
+    if output is None:
+        return 2
+    try:
+        print_axioms = parse_print_axioms(output)
+    except ValueError as exc:
+        print(f"cannot parse {args.print_axioms_out}'s #print axioms output: {exc}")
+        return 2
+
+    closure_text = _read_audit_crosscheck_input(args.closure_json, what="--closure-json")
+    if closure_text is None:
+        return 2
+    try:
+        closure = _json.loads(closure_text)
+    except _json.JSONDecodeError as exc:
+        print(f"cannot read {args.closure_json}: {exc}")
+        return 2
+    targets = closure.get("targets") if isinstance(closure, dict) else None
+    if not isinstance(targets, list):
+        print(f"{args.closure_json}: not `audit-closure --json` output (no \"targets\" list)")
+        return 2
+    closure_axioms = {
+        t["name"]: t.get("axioms", [])
+        for t in targets if isinstance(t, dict) and isinstance(t.get("name"), str)
+    }
+
+    try:
+        problems = crosscheck_axioms(print_axioms, closure_axioms)
+    except ValueError as exc:
+        print(f"{args.closure_json}: malformed closure audit data: {exc}")
+        return 2
+    if problems:
+        for p in problems:
+            print(f"MISMATCH: {p}")
+        return 1
+    print(f"OK: {len(print_axioms)} theorem(s) agree between #print axioms and the closure "
+          "audit")
     return 0
 
 
@@ -1474,6 +1941,704 @@ def cmd_mission_ci_record(args) -> int:
     print(f"{slug}: CI record {rec.key} run {rec.run_id} ({rec.conclusion}) on artifact sha256 "
           f"{rec.artifact_sha256[:16]}... head {rec.head_sha[:9]}")
     return 0 if rec.conclusion == "success" else 1
+
+
+def cmd_mission_rejudge_record(args) -> int:
+    """Record a local Comparator run with nanoda ON for a `heavy_certificates` node.
+
+    Hosted CI judges a heavy node Lean-kernel-only (its certificates exhaust a 16 GB
+    runner under nanoda). The owner's rule: such a node stays proved only with a passing
+    LOCAL re-judge -- Comparator, nanoda ON -- on its CURRENT artifact, run on a large
+    machine at the pinned telperion/NANODA_REV. The verdict comes from the log text
+    (`rejudge_log_verdict`: one passing REJUDGE-PART block per part the node's bundle renders,
+    nanoda forced on), never from a flag: there is no `--pass`/`--fail` option. Refuses (exit 2,
+    no record) when that bundle cannot be rendered.
+
+    Owner ruling (fix round 1, 2026-10-27): a log must bind itself to ONE node and ONE
+    artifact digest via a `REJUDGE-HEADER node=<slug> artifact_sha256=<64-hex>` line the
+    re-judge runner writes before Comparator starts -- otherwise a passing log for a
+    different node, or for an older artifact, could be recorded as THIS node's re-judge.
+    Refuses (exit 2, no record written) when that header is missing, names a different
+    node, or names an artifact digest that is not the one currently on disk. Also refuses
+    (exit 2, no record) when the node is neither `heavy_certificates = true` nor carries a
+    `[comparator]` record whose second kernel was off (`provenance.needs_rejudge`).
+
+    Controller ruling 6 (2026-10-27): a node's status may be `proved`, OR `draft`/`open`
+    with a proof link whose artifact exists on disk -- pre-grant judging, so a fresh heavy
+    node can be re-judged locally BEFORE `mission grant` ever runs, closing the loop Task 5's
+    `grant_status` check otherwise leaves shut (that check refuses to grant a heavy node with
+    no passing re-judge, and a `proved`-only `rejudge-record` could never produce one for a
+    node that isn't proved yet). Still refused (exit 2, no record): no proof link, a missing
+    artifact, and status `deprecated` or `refuted` -- neither is a node a re-judge is ever
+    meaningful for.
+
+    Step 0b Task 3 (2026-10-28): a log carrying `REJUDGE-ROUTE nanoda-direct`
+    (`nanoda_direct.run_direct`'s own route, for the 7 nodes no Comparator bundle can
+    consume) is accepted for ANY proved node, heavy or not -- the `needs_rejudge` gate above
+    is for routes Comparator judges; a nanoda-direct node was never a Comparator candidate to
+    begin with. Its verdict comes from `rejudge_log_verdict`'s own route branch
+    (`nanoda_direct.verdict_of_log`), never from rendering a bundle. The record's `route`
+    field is set from the log, so `render_provenance_report` labels it distinctly from a
+    Comparator re-judge.
+
+    Controller Ruling 0b-9 (2026-10-28): a nanoda-direct log is REFUSED (exit 2, no
+    record) for a node that `needs_rejudge` (Ruling 0b-4 at record time), and must bind
+    itself to the node's own registered theorem and module (`_nanoda_direct_binding_problem`).
+    """
+    import dataclasses as _dc
+    import hashlib as _hashlib
+    import platform as _platform
+    from datetime import date as _date
+
+    from .missions.provenance import sha256_file
+    from .missions.registry import load_campaign
+    from .missions import rejudge as _rejudge
+    from .missions.rejudge import parse_rejudge_header
+    from .missions.schema import RejudgeRecord, SchemaError, save_node, slug_of
+
+    slug = slug_of(args.slug)
+    camp_root = _resolve_campaign(_missions_root(args), slug,
+                                  getattr(args, "campaign", None))
+    if camp_root is None:
+        return 1
+    try:
+        camp = load_campaign(camp_root)
+    except SchemaError as exc:
+        print(f"Schema error: {exc}")
+        return 1
+    node = camp.nodes.get(slug)
+    if node is None:
+        print(f"Node {slug!r} not found in campaign {camp_root.name!r}")
+        return 1
+    if node.proof is None:
+        print(f"{slug}: no artifact linked; a re-judge is about an artifact.", file=sys.stderr)
+        return 2
+    art = camp_root / node.proof.artifact
+    if not art.exists():
+        print(f"{slug}: artifact {node.proof.artifact!r} does not exist", file=sys.stderr)
+        return 2
+    if node.status != "proved" and node.status not in ("draft", "open"):
+        print(f"{slug}: status is {node.status!r}; a re-judge may only be recorded for a "
+              "'proved' node, or a 'draft'/'open' heavy node whose artifact is already on "
+              "disk (pre-grant judging).", file=sys.stderr)
+        return 2
+    raw = args.log.read_bytes()
+    text = raw.decode(errors="replace")
+    # Step 0b Task 3 (2026-10-28): a nanoda-direct log (one of the 7 nodes no Comparator
+    # bundle can consume) is accepted for a proved node that does NOT need_rejudge -- there is no
+    # `[comparator]`-driven "this node is judged Lean-kernel-only" signal to gate on, because
+    # these nodes were never judged by Comparator at all. The needs_rejudge gate below stays
+    # exactly as it was for every other route.
+    route = _rejudge.parse_rejudge_route(text)
+    from .missions.provenance import needs_rejudge
+    if route == "nanoda-direct" and needs_rejudge(node):
+        # Controller Ruling 0b-9 (2026-10-28), Minor 2: Ruling 0b-4 at RECORD time. A node
+        # that needs a Comparator re-judge (heavy, judge_via = "heavy", or judged
+        # Lean-kernel-only) cannot be satisfied by nanoda-direct, so its record is refused
+        # outright instead of being written and then flagged by `mission verify`.
+        print(f"{slug}: needs a Comparator re-judge (heavy_certificates, judge_via = "
+              "\"heavy\", or judged Lean-kernel-only); a nanoda-direct log cannot satisfy it "
+              "(Ruling 0b-4). Refusing to record.", file=sys.stderr)
+        return 2
+    if route != "nanoda-direct":
+        if not needs_rejudge(node):
+            # Final-fix 1: the same predicate `rejudge_problem` uses -- the flag, OR a
+            # `[comparator]` record saying nanoda was off -- so a node verify demands a re-judge
+            # for can always get one recorded.
+            print(f"{slug}: heavy_certificates is not set and its [comparator] record does not "
+                  "say nanoda was off; a re-judge is only meaningful for a node hosted CI judges "
+                  "Lean-kernel-only.", file=sys.stderr)
+            return 2
+    header = parse_rejudge_header(text)
+    if header is None:
+        print(f"{slug}: log has no 'REJUDGE-HEADER node=<slug> artifact_sha256=<64-hex>' "
+              "line; the re-judge runner must write it before Comparator starts. Refusing "
+              "to bind this log to any node.", file=sys.stderr)
+        return 2
+    header_node, header_sha = header
+    if slug_of(header_node) != slug:
+        print(f"{slug}: log's REJUDGE-HEADER names node {header_node!r}, not {slug!r}; "
+              "refusing a log from a different node.", file=sys.stderr)
+        return 2
+    cur_sha = sha256_file(art)
+    if header_sha != cur_sha:
+        print(f"{slug}: log's REJUDGE-HEADER names artifact sha256 {header_sha[:12]}..., but "
+              f"the artifact on disk is {cur_sha[:12]}...; re-run the re-judge on the "
+              "CURRENT artifact.", file=sys.stderr)
+        return 2
+    if route == "nanoda-direct":
+        # No Comparator bundle to render for these nodes; the verdict comes straight from
+        # the log's own REJUDGE-EXPORT/REJUDGE-NANODA sections (nanoda_direct.verdict_of_log).
+        parts: list = []
+    else:
+        # Final-fix 2: the verdict covers EVERY part of the node. Render its bundle the way the
+        # queue does (nanoda forced on) to learn the parts; a log must hold exactly one passing
+        # REJUDGE-PART block per part. No render, no expected count -> refuse, write nothing.
+        try:
+            parts = _rejudge.expected_part_slugs(camp_root, node, slug)
+        except _rejudge.RejudgeSetupError as exc:
+            print(f"{slug}: cannot render the node's bundle to learn its re-judge parts ({exc}); "
+                  "refusing to record a verdict whose part count is unknown.", file=sys.stderr)
+            return 2
+    verdict = _rejudge.rejudge_log_verdict(text, parts)
+    if route == "nanoda-direct":
+        rc = _nanoda_direct_binding_problem(camp_root, node, slug, art, text, verdict)
+        if rc:
+            return rc
+    rev = _nanoda_rev_path().read_text().strip()
+    # Step 0b Task 1 (2026-10-28): bind the record to the artifact's WHOLE import closure,
+    # not only the top-level file. The queue's header may already carry `closure_sha256=`
+    # (computed by the same function, `provenance.closure_digest`); if so it must match the
+    # CURRENT closure, or this is refused exactly like a stale artifact_sha256. If the header
+    # predates closure binding (no such field), compute it now and say so in the note.
+    from .missions.provenance import ClosureError, closure_digest, closure_files as _closure_files
+    try:
+        cur_closure_files = _closure_files(camp_root, node)
+        cur_closure = closure_digest(camp_root, node)
+    except ClosureError as exc:
+        print(f"{slug}: cannot resolve its import closure ({exc}); refusing to record.",
+              file=sys.stderr)
+        return 2
+    header_closure = _rejudge.parse_rejudge_header_closure(text)
+    note = args.note
+    if header_closure is not None:
+        if header_closure != cur_closure:
+            print(f"{slug}: log's REJUDGE-HEADER names closure_sha256 "
+                  f"{header_closure[:12]}..., but the current import closure digests to "
+                  f"{cur_closure[:12]}...; re-run the re-judge on the CURRENT closure.",
+                  file=sys.stderr)
+            return 2
+    else:
+        extra = "closure_sha256 computed at record time (log predates closure binding)"
+        note = f"{note}; {extra}" if note else extra
+    try:
+        rec = RejudgeRecord(
+            date=_date.today().isoformat(), machine=_platform.node(), nanoda_rev=rev,
+            comparator_tag=args.comparator_tag, artifact_sha256=cur_sha,
+            verdict=verdict, log_sha256=_hashlib.sha256(raw).hexdigest(),
+            peak_rss_kb=args.peak_rss_kb, note=note,
+            closure_sha256=cur_closure, closure_files=len(cur_closure_files),
+            route=route,
+        )
+    except SchemaError as exc:
+        print(f"{slug}: {exc}")
+        return 1
+    save_node(_dc.replace(node, rejudge=rec, updated=rec.date), camp_root / "nodes" / f"{slug}.toml")
+    if verdict != "pass":
+        print(f"REJUDGE FAIL {slug}: nanoda/Comparator did not accept -- REPORT TO OWNER",
+              file=sys.stderr)
+        return 1
+    print(f"REJUDGE PASS {slug} nanoda={rev[:8]} artifact={rec.artifact_sha256[:12]}")
+    return 0
+
+
+def cmd_mission_checks_record(args) -> int:
+    """Record the spec 5.2 checks (negation probe, closure audit, statement fingerprint) for a node.
+
+    Every verdict is read from the checks' own JSON output, never from a flag:
+    - `--probe-json`: `telperion probe-negation --json` stdout, {"verdict", "detail",
+      "olean_sha256", "olean_closure"};
+    - `--fingerprint-json`: `telperion fingerprint --json` stdout, {"fingerprints",
+      "olean_sha256", "olean_closure"} (or {"error"}, refused);
+    - `--closure-json`: the file `telperion audit-closure --json FILE` writes
+      (closure_audit.AuditResult.to_json). PASS only when its "verdict" is "PASS" AND "ok" is
+      true (a clean Lean exit); anything else, including no verdict, is recorded as FAIL.
+
+    Ruling 9: the probe and the fingerprint must have run on the SAME replayed olean closure,
+    so both JSONs must carry the same `olean_sha256`; it is stored next to the artifact's
+    source sha256. Step 5 Task 7: so must the closure audit, which now runs as a kernel-replay
+    callback: its JSON must say `isolated: true` and carry that same `olean_sha256`, so all
+    three checks ran on ONE replayed closure (recorded as `closure_isolated`). For a node that
+    needs checks (`provenance.checks_required`: created on or after the cutoff), a closure JSON
+    that is not isolated (`audit-closure --legacy-import`, which imports the submission, or a
+    JSON from before step 5) is refused; for an older node it is recorded with
+    `closure_isolated` false. The fingerprinted theorem (`--target`, or the only one in the
+    JSON) must also be one of the closure audit's targets. A `signoff:` in --note is free text:
+    nothing checks the reviewer is independent of the author (see `provenance.checks_problem`).
+
+    Ruling 12: the probe's `theorem` (and the fingerprint's, when it names one) must be that
+    target, and both JSONs' `source_sha256` (the --file each check was given) must be the
+    artifact's CURRENT sha256. A mismatch or an absent value is refused (final review I2).
+    Final review I1: the target is the node's registered theorem
+    (`guard_anchors.resolve_theorem`, the declaration the grant gate matches); a `--target`
+    naming anything else is refused. That name tie is syntactic and stays as a readable
+    cross-check; step 5 Task 6 adds the SEMANTIC tie: for a node that needs checks, the
+    target's fingerprint (type mode; a `"mode": "value"` JSON is refused) must equal the node's
+    frozen statement fingerprint (FREEZE.toml `[fingerprints]`), and a node with none frozen is
+    refused ("statement fingerprint not frozen"); the JSON's `trusted_env_sha256` must be the
+    freeze's `fingerprints_env` ("fingerprint computed under a different trusted env"). Final review I3 (kept as a second line after step 5): the
+    probe and fingerprint JSONs' replay `axioms` lists must agree, be a subset of CLEAN_AXIOMS
+    and include the closure audit's axioms for the target; the list is recorded.
+
+    The JSON inputs are unsigned operator files: reading verdicts from them (never from flags)
+    guards against mistakes, not against an operator who writes them by hand.
+
+    Refuses (exit 2, no record): a malformed or unreadable JSON, an unknown probe verdict, a
+    missing or mismatched `olean_sha256`, an ambiguous or unaudited fingerprint target, no
+    proof link or a missing artifact, status `deprecated` or `refuted`, a non-isolated closure
+    JSON for a node that needs checks, a closure `olean_sha256` that is not the probe's, a fingerprint that is not
+    the frozen statement fingerprint (or none frozen) for a node that needs checks. Otherwise writes the
+    record and exits 0 when it passes `provenance.checks_problem`, 1 when it does not (e.g.
+    VACUOUS, or PROBE_ONLY without a `signoff:` in --note). Never changes the node's status.
+    """
+    import dataclasses as _dc
+    import json as _json
+    from datetime import date as _date
+
+    from .missions.provenance import CHECKS_CUTOFF, checks_problem, checks_required, sha256_file
+    from .missions.registry import load_campaign
+    from .missions.schema import PROBE_VERDICTS, ChecksRecord, SchemaError, save_node, slug_of
+
+    slug = slug_of(args.slug)
+    camp_root = _resolve_campaign(_missions_root(args), slug,
+                                  getattr(args, "campaign", None))
+    if camp_root is None:
+        return 1
+    try:
+        camp = load_campaign(camp_root)
+    except SchemaError as exc:
+        print(f"Schema error: {exc}")
+        return 1
+    node = camp.nodes.get(slug)
+    if node is None:
+        print(f"Node {slug!r} not found in campaign {camp_root.name!r}")
+        return 1
+
+    def refuse(msg: str) -> int:
+        print(f"{slug}: {msg}. Refusing to record.", file=sys.stderr)
+        return 2
+
+    if node.proof is None:
+        return refuse("no artifact linked; the checks are about an artifact")
+    art = camp_root / node.proof.artifact
+    if not art.exists():
+        return refuse(f"artifact {node.proof.artifact!r} does not exist")
+    if node.status in ("deprecated", "refuted"):
+        return refuse(f"status is {node.status!r}; checks are recorded for a node that is or "
+                      "may become proved")
+
+    docs = {}
+    for name, path in (("probe", args.probe_json), ("fingerprint", args.fingerprint_json),
+                       ("closure", args.closure_json)):
+        try:
+            docs[name] = _json.loads(Path(path).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            return refuse(f"cannot read the {name} JSON {path}: {exc}")
+        if not isinstance(docs[name], dict):
+            return refuse(f"the {name} JSON {path} is not an object")
+    probe, fp, closure = docs["probe"], docs["fingerprint"], docs["closure"]
+
+    verdict = probe.get("verdict")
+    if verdict not in PROBE_VERDICTS:
+        return refuse(f"the probe JSON's verdict {verdict!r} is not one of {PROBE_VERDICTS}")
+    if "error" in fp or not isinstance(fp.get("fingerprints"), dict):
+        why = fp.get("error", 'no "fingerprints" object')
+        return refuse(f"the fingerprint JSON holds no fingerprints ({why})")
+    if "verdict" not in closure or "ok" not in closure or not isinstance(closure.get("targets"), list):
+        return refuse("the closure JSON is not `audit-closure --json` output (needs \"verdict\", "
+                      "\"ok\" and \"targets\")")
+
+    # Ruling 9: both checks ran on one replayed closure.
+    p_olean, f_olean = probe.get("olean_sha256"), fp.get("olean_sha256")
+    if not p_olean or not f_olean:
+        return refuse("the probe and fingerprint JSONs must both carry olean_sha256 (the "
+                      f"replayed closure); probe has {p_olean!r}, fingerprint has {f_olean!r}")
+    if p_olean != f_olean:
+        return refuse(f"the probe ran on olean_sha256 {str(p_olean)[:12]}... but the fingerprint "
+                      f"on {str(f_olean)[:12]}...; run both checks on the same build")
+    # Step 5 Task 7: the closure audit ran on that same replayed closure, never by importing the
+    # submission (which could forge it).
+    c_isolated = closure.get("isolated") is True
+    if not c_isolated and checks_required(node):
+        return refuse(f"the closure JSON is not isolated (\"isolated\": {closure.get('isolated')!r}): it "
+                      "comes from `audit-closure --legacy-import` or a telperion from before step 5, which "
+                      "IMPORTS the submission, whose code can forge it; a node created on or after "
+                      f"{CHECKS_CUTOFF} needs the kernel-replayed audit (`telperion audit-closure` without "
+                      "--legacy-import)")
+    if c_isolated and not closure.get("olean_sha256"):
+        return refuse("the closure JSON says isolated but its olean_sha256 is missing (no replayed closure to "
+                      "compare with the probe's and the fingerprint's); re-run `telperion audit-closure` on the "
+                      "same build")
+    if c_isolated and closure["olean_sha256"] != p_olean:
+        return refuse(f"the closure audit ran on olean_sha256 {str(closure['olean_sha256'])[:12]}... but "
+                      f"the probe and the fingerprint on {str(p_olean)[:12]}...; run all three checks on the "
+                      "same build")
+
+    # Final review I1: the checks must be of the node's OWN theorem, the artifact declaration the
+    # grant gate matches (`guard_anchors.resolve_theorem`), never a helper lemma beside it.
+    from .missions import judge as _judge
+    from .missions.statements import statement_path
+    ga = _judge._guard_anchors()
+    try:
+        want = ga.resolve_theorem(art.read_text(encoding="utf-8"),
+                                  statement_path(camp_root, node).read_text(encoding="utf-8"))
+    except (OSError, ga.RegistryError) as exc:
+        return refuse(f"cannot resolve the node's registered theorem ({exc})")
+    fps = fp["fingerprints"]
+    target = args.target if args.target is not None else want
+    if target != want:
+        return refuse(f"--target {target!r} is not the node's registered theorem {want!r}; checks of a "
+                      "helper lemma do not cover the node")
+    if target not in fps:
+        return refuse(f"the fingerprint JSON has no target {target!r}, the node's registered theorem "
+                      f"(has {sorted(fps)})")
+    # Step 5 Task 6: the SEMANTIC tie. The checked theorem's statement (a TYPE-mode fingerprint; a
+    # value-mode one would be of a definition, not of what a theorem proves) must be the node's
+    # frozen statement fingerprint, whatever name the resolver above read out of the artifact.
+    if fp.get("mode", "type") != "type":
+        return refuse(f"the fingerprint JSON is a {fp.get('mode')!r}-mode fingerprint; the checked theorem "
+                      "is fingerprinted in type mode (`telperion fingerprint` without --mode value)")
+    if checks_required(node):
+        from .missions.process import statement_fingerprint_problem
+        fp_problem = statement_fingerprint_problem(camp_root, node, str(fps[target]),
+                                                   trusted_env_sha256=fp.get("trusted_env_sha256"))
+        if fp_problem:
+            return refuse(fp_problem)
+    audited = [t.get("name") for t in closure["targets"] if isinstance(t, dict)]
+    if target not in audited:
+        return refuse(f"the closure audit's targets {audited} do not include {target!r}")
+
+    # Ruling 12: one theorem across all three, and the probe and fingerprint ran on the
+    # artifact's CURRENT source. Every value must be present and right (final review I2: no
+    # waiver); re-run the checks with --file for a JSON that lacks one.
+    cur_sha = sha256_file(art)
+    if probe.get("theorem") is None:
+        return refuse("the probe JSON names no theorem; re-run `probe-negation --json` with --file")
+    if probe["theorem"] != target:
+        return refuse(f"the probe was of theorem {probe['theorem']!r} but the fingerprint and "
+                      f"closure audit are of {target!r}")
+    if fp.get("theorem") is not None and fp["theorem"] != target:
+        return refuse(f"the fingerprint JSON's theorem {fp['theorem']!r} is not {target!r}")
+    for name, doc in (("probe", probe), ("fingerprint", fp)):
+        src = doc.get("source_sha256")
+        if src is None:
+            return refuse(f"the {name} JSON has no source_sha256; re-run the {name} with --file <the "
+                          "artifact>")
+        if str(src).lower() != cur_sha:
+            return refuse(f"the {name} ran on source_sha256 {str(src)[:12]}..., but the artifact "
+                          f"on disk is {cur_sha[:12]}...; re-run the {name} on the current artifact")
+        if doc.get("stale"):
+            return refuse(f"the {name} JSON says its --file was newer than the module's olean "
+                          "(a stale build); rebuild and re-run")
+    note = args.note
+
+    # Final review I3, kept as a second line now that the closure audit is replayed too (step 5
+    # Task 7): the REPLAY's axiom list. The probe and the fingerprint must carry the same list, it
+    # must be a subset of CLEAN_AXIOMS, and it must include the closure audit's axioms for the
+    # target.
+    from .comparator import CLEAN_AXIOMS
+    p_ax, f_ax = probe.get("axioms"), fp.get("axioms")
+    if not isinstance(p_ax, list) or not isinstance(f_ax, list):
+        return refuse("the probe and fingerprint JSONs must both carry the replay's `axioms` list; "
+                      "re-run them with the current telperion")
+    if sorted(p_ax) != sorted(f_ax):
+        return refuse(f"the probe's replay axioms {sorted(p_ax)} differ from the fingerprint's "
+                      f"{sorted(f_ax)}")
+    bad = [a for a in p_ax if a not in CLEAN_AXIOMS]
+    if bad:
+        return refuse(f"the replayed module uses non-standard axioms {bad}")
+    c_ax = next((t.get("axioms") for t in closure["targets"]
+                 if isinstance(t, dict) and t.get("name") == target), None)
+    if not isinstance(c_ax, list) or not set(c_ax) <= set(p_ax):
+        return refuse(f"the closure audit's axioms for {target!r} ({c_ax!r}) are not among the "
+                      f"replay's {sorted(p_ax)}")
+
+    closure_verdict = "PASS" if closure["verdict"] == "PASS" and closure["ok"] is True else "FAIL"
+    try:
+        rec = ChecksRecord(
+            date=_date.today().isoformat(), artifact_sha256=cur_sha,
+            olean_sha256=str(p_olean).lower(), probe_verdict=verdict,
+            closure_verdict=closure_verdict,
+            statement_fingerprint=str(fps[target]).lower(), theorem=target, note=note,
+            axioms=tuple(sorted(p_ax)), closure_isolated=c_isolated)
+    except SchemaError as exc:
+        return refuse(str(exc))
+    new = _dc.replace(node, checks=rec, updated=rec.date)
+    save_node(new, camp_root / "nodes" / f"{slug}.toml")
+    problem = checks_problem(camp_root, new)
+    if problem:
+        print(f"CHECKS NOT PASSING {slug}: {problem}", file=sys.stderr)
+        return 1
+    print(f"CHECKS PASS {slug}: probe {rec.probe_verdict}, closure {rec.closure_verdict}, "
+          f"fingerprint {rec.statement_fingerprint[:12]}... artifact {rec.artifact_sha256[:12]}... "
+          f"olean {rec.olean_sha256[:12]}...")
+    return 0
+
+
+def _nanoda_rev_path() -> Path:
+    """The pinned nanoda rev, <project>/NANODA_REV, in the Arda and the standalone layout alike."""
+    from . import paths
+    return paths.project_root() / "NANODA_REV"
+
+
+def _nanoda_direct_binding_problem(camp_root, node, slug, art, text, verdict) -> int:
+    """Controller Ruling 0b-9 (2026-10-28), Fix 2: bind a nanoda-direct log to the node's
+    OWN registered theorem and module. 0 when bound; 2 (after printing why) when not.
+
+    The log must carry exactly one `REJUDGE-INFO ... theorem=T module=M ...` line before its
+    EXPORT section (`nanoda_direct.info_binding`); T must equal
+    `guard_anchors.resolve_theorem(artifact, statement)` -- the resolver `run_direct` uses --
+    and M must equal `judge.module_name_of(<island lean dir>, artifact)`. A PASSING log's
+    export must also declare T as a theorem (`export_declares_theorem`, lean4export's
+    ndjson): a pass over an export of some other constant is no pass for this node. A
+    failing log is still recorded as FAIL once its INFO binding checks out.
+    """
+    from .missions import judge as _judge
+    from .missions import nanoda_direct as _nd
+    from .missions.rejudge import RejudgeSetupError, island_of_artifact
+    from .missions.statements import statement_path
+
+    try:
+        log_thm, log_mod = _nd.info_binding(text)
+    except _nd.BindingError as exc:
+        print(f"{slug}: nanoda-direct log does not bind its export to one theorem/module "
+              f"({exc}); refusing to record.", file=sys.stderr)
+        return 2
+    artifact = Path(art).resolve()
+    camp_root = Path(camp_root).resolve()
+    troot = camp_root.parent.parent
+    stmt = statement_path(camp_root, node)
+    ga = _judge._guard_anchors()
+    try:
+        want_thm = ga.resolve_theorem(artifact.read_text(), stmt.read_text())
+    except (OSError, ga.RegistryError) as exc:
+        print(f"{slug}: cannot resolve the node's registered theorem ({exc}); refusing to "
+              "record.", file=sys.stderr)
+        return 2
+    try:
+        island = island_of_artifact(troot, artifact)
+        want_mod = _judge.module_name_of(_judge.island_dir(troot, island), artifact)
+    except (RejudgeSetupError, _judge.JudgeError, ValueError) as exc:
+        print(f"{slug}: cannot resolve the artifact's module ({exc}); refusing to record.",
+              file=sys.stderr)
+        return 2
+    if log_thm != want_thm:
+        print(f"{slug}: log exported theorem {log_thm!r}, but the node's registered theorem is "
+              f"{want_thm!r}; refusing to record.", file=sys.stderr)
+        return 2
+    if log_mod != want_mod:
+        print(f"{slug}: log exported from module {log_mod!r}, but the artifact's module is "
+              f"{want_mod!r}; refusing to record.", file=sys.stderr)
+        return 2
+    if verdict == "pass":
+        parsed = _nd._parse_sections(text)
+        if parsed is None or not _nd.export_declares_theorem(parsed[1], want_thm):
+            print(f"{slug}: the log's export does not declare theorem {want_thm!r}; a pass "
+                  "over some other constant is no pass for this node. Refusing to record.",
+                  file=sys.stderr)
+            return 2
+    return 0
+
+
+def cmd_mission_rejudge_backfill_closure(args) -> int:
+    """Back-fill `[rejudge].closure_sha256` for a node whose closure files are
+    git-verified unchanged since the re-judge queue started (step 0b Task 2, 2026-10-28).
+
+    A node's `[rejudge]` record was written before closure binding existed (Task 1), so
+    it carries no `closure_sha256`. Re-judging it needs Lean/Comparator; back-filling
+    does not -- but ONLY when nothing in its import closure could have changed what the
+    re-judge actually checked. The back-fill rule (BOTH must hold for every closure
+    file):
+      - `git log --format=%H <since>..HEAD -- <file>` is empty;
+      - `git status --porcelain -- <file>` is empty (not dirty).
+    Refuses (exit 2, no write) otherwise: that node must be RE-JUDGED, never back-filled.
+    """
+    import dataclasses as _dc
+    import subprocess
+
+    from .missions.provenance import (
+        ClosureError, closure_digest, closure_files as _closure_files,
+        closure_support_files as _closure_support_files,
+    )
+    from .missions.registry import load_campaign
+    from .missions.schema import SchemaError, save_node, slug_of
+
+    rebind = bool(getattr(args, "rebind", False))
+    reason = " ".join(str(getattr(args, "reason", "") or "").split())
+    slug = slug_of(args.slug)
+    if rebind and not reason:
+        print(f"{slug_of(args.slug)}: --rebind needs --reason TEXT (why the closure digest is "
+              "being re-bound); it goes into the record's note.", file=sys.stderr)
+        return 2
+    camp_root = _resolve_campaign(_missions_root(args), slug, getattr(args, "campaign", None))
+    if camp_root is None:
+        return 1
+    try:
+        camp = load_campaign(camp_root)
+    except SchemaError as exc:
+        print(f"Schema error: {exc}")
+        return 1
+    node = camp.nodes.get(slug)
+    if node is None:
+        print(f"Node {slug!r} not found in campaign {camp_root.name!r}")
+        return 1
+    if node.rejudge is None:
+        print(f"{slug}: no [rejudge] record to back-fill (`mission rejudge-record` first)",
+              file=sys.stderr)
+        return 2
+    if node.rejudge.closure_sha256 and not rebind:
+        print(f"{slug}: [rejudge] already has closure_sha256 "
+              f"{node.rejudge.closure_sha256[:12]}...; pass --rebind to replace it.",
+              file=sys.stderr)
+        return 2
+    if node.proof is None:
+        print(f"{slug}: no artifact linked", file=sys.stderr)
+        return 2
+
+    camp_root = Path(camp_root).resolve()
+    top = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=str(camp_root),
+                         capture_output=True, text=True)
+    if top.returncode != 0:
+        print(f"{slug}: cannot find the git repo root from {camp_root}: {top.stderr.strip()}",
+              file=sys.stderr)
+        return 2
+    repo_root = Path(top.stdout.strip())
+
+    try:
+        files = _closure_files(camp_root, node)
+        support = _closure_support_files(camp_root, node)
+    except ClosureError as exc:
+        print(f"{slug}: cannot resolve its import closure ({exc}); refusing to write.",
+              file=sys.stderr)
+        return 2
+    if not files:
+        print(f"{slug}: its import closure resolved to no files", file=sys.stderr)
+        return 2
+    # Controller Ruling 0b-3: the git rule also covers each lakefile.toml and
+    # lake-manifest.json involved (the island's and every path-required sibling's) --
+    # a changed srcDir, require path, or pinned rev could change the closure or its
+    # digest without any closure .lean FILE itself changing.
+    rel_files = []
+    for f in list(files) + list(support):
+        f = Path(f).resolve()
+        try:
+            rel_files.append(str(f.relative_to(repo_root)))
+        except ValueError:
+            print(f"{slug}: closure file {f} is outside the repo {repo_root}; the git "
+                  "back-fill rule cannot be checked for it", file=sys.stderr)
+            return 2
+
+    dirty = subprocess.run(["git", "status", "--porcelain", "--", *rel_files],
+                           cwd=str(repo_root), capture_output=True, text=True)
+    if dirty.returncode != 0:
+        print(f"{slug}: `git status` failed: {dirty.stderr.strip()}", file=sys.stderr)
+        return 2
+    if dirty.stdout.strip():
+        print(f"{slug}: refused -- closure file(s) are dirty (uncommitted changes):\n"
+              f"{dirty.stdout}", file=sys.stderr)
+        return 2
+
+    log = subprocess.run(["git", "log", "--format=%H", f"{args.since}..HEAD", "--", *rel_files],
+                         cwd=str(repo_root), capture_output=True, text=True)
+    if log.returncode != 0:
+        print(f"{slug}: `git log` failed: {log.stderr.strip()}", file=sys.stderr)
+        return 2
+    if log.stdout.strip():
+        commits = log.stdout.strip().splitlines()
+        shown = ", ".join(c[:9] for c in commits[:5])
+        print(f"{slug}: refused -- {len(commits)} commit(s) touched its closure since "
+              f"{args.since}: {shown}{', ...' if len(commits) > 5 else ''}. Re-judge, do "
+              "not back-fill.", file=sys.stderr)
+        return 2
+
+    try:
+        digest = closure_digest(camp_root, node)
+    except ClosureError as exc:
+        print(f"{slug}: cannot resolve its import closure ({exc}); refusing to write.",
+              file=sys.stderr)
+        return 2
+    from datetime import date as _date
+    today = _date.today().isoformat()
+    git_clause = (f"git: no change to {len(files)} closure files and {len(support)} support "
+                  f"files since {args.since}")
+    if rebind:
+        # Controller Ruling 0b-9 (2026-10-28), Fix 4: the reason is the caller's, not a
+        # hardcoded "after srcDir fix"; and a re-bind REPLACES any earlier re-bind clause
+        # (they described a digest that no longer exists), so clauses never pile up.
+        extra = f"closure re-bound {today}: {reason} ({git_clause})"
+    else:
+        extra = f"closure back-filled {today} ({git_clause})"
+    note = _rebind_note(node.rejudge.note, extra, rebind=rebind)
+    try:
+        rec = _dc.replace(node.rejudge, closure_sha256=digest, closure_files=len(files),
+                          note=note)
+    except SchemaError as exc:
+        print(f"{slug}: {exc}")
+        return 1
+    save_node(_dc.replace(node, rejudge=rec, updated=node.rejudge.date),
+             camp_root / "nodes" / f"{slug}.toml")
+    verb = "re-bound" if rebind else "back-filled"
+    print(f"{slug}: closure {verb} ({len(files)} files, sha256 {digest[:16]}..., "
+          f"no change since {args.since})")
+    return 0
+
+
+def _rebind_note(note: str, extra: str, *, rebind: bool) -> str:
+    """The record's note with *extra* appended as a "; "-separated clause. Duplicate clauses
+    are dropped; on a re-bind every earlier "closure re-bound ..." clause is dropped first
+    (Controller Ruling 0b-9)."""
+    clauses = [c.strip() for c in (note or "").split("; ") if c.strip()]
+    if rebind:
+        clauses = [c for c in clauses if not c.startswith("closure re-bound")]
+    out = []
+    for c in clauses + [extra]:
+        if c not in out:
+            out.append(c)
+    return "; ".join(out)
+
+
+def cmd_mission_second_kernel_mark(args) -> int:
+    """Set the durable registry marker `second_kernel_route` (Controller Ruling 0b-9,
+    2026-10-28) on a node -- refused (exit 2, no write) unless the node's CURRENT
+    `[rejudge]` record is on exactly that route AND `rejudge_problem` finds nothing wrong
+    with the node once marked (passing, current artifact, current closure digest, and for a
+    node that needs a Comparator re-judge, route "comparator").
+
+    Once set, deleting the `[rejudge]` table or editing its route fails `mission verify`
+    instead of silently dropping or changing the claim."""
+    import dataclasses as _dc
+
+    from .missions.provenance import rejudge_problem
+    from .missions.registry import load_campaign
+    from .missions.schema import SECOND_KERNEL_ROUTES, SchemaError, save_node, slug_of
+
+    slug = slug_of(args.slug)
+    route = (args.route or "").strip()
+    if route not in SECOND_KERNEL_ROUTES or not route:
+        print(f"{slug}: --route must be one of {SECOND_KERNEL_ROUTES[1:]!r}, not {route!r}",
+              file=sys.stderr)
+        return 2
+    camp_root = _resolve_campaign(_missions_root(args), slug, getattr(args, "campaign", None))
+    if camp_root is None:
+        return 1
+    try:
+        camp = load_campaign(camp_root)
+    except SchemaError as exc:
+        print(f"Schema error: {exc}")
+        return 1
+    node = camp.nodes.get(slug)
+    if node is None:
+        print(f"Node {slug!r} not found in campaign {camp_root.name!r}")
+        return 1
+    r = node.rejudge
+    if r is None:
+        print(f"{slug}: no [rejudge] record; record a passing re-judge on route {route!r} "
+              "first.", file=sys.stderr)
+        return 2
+    if r.route != route:
+        print(f"{slug}: its [rejudge] record is on route {r.route!r}, not {route!r}; "
+              "refusing to mark.", file=sys.stderr)
+        return 2
+    marked = _dc.replace(node, second_kernel_route=route)
+    problem = rejudge_problem(camp.root, marked)
+    if problem:
+        print(f"{slug}: its current [rejudge] does not pass on route {route!r}: {problem}; "
+              "refusing to mark.", file=sys.stderr)
+        return 2
+    save_node(marked, camp_root / "nodes" / f"{slug}.toml")
+    print(f"{slug}: second_kernel_route = {route!r} (record {r.date}, verdict {r.verdict}, "
+          f"closure {r.closure_sha256[:12]}...)")
+    return 0
 
 
 def cmd_mission_comparator_record(args) -> int:
@@ -1870,8 +3035,16 @@ def cmd_mission_verify(args) -> int:
     seen_warnings: set[str] = set()
     for camp_root in roots:
         deep = getattr(args, "deep_lean", False)
-        report = verify_campaign(camp_root, deep_lean=deep,
-                                 strict_provenance=getattr(args, 'strict_provenance', False))
+        try:
+            report = verify_campaign(camp_root, deep_lean=deep,
+                                     strict_provenance=getattr(args, 'strict_provenance', False))
+        except Exception as exc:
+            # A campaign whose records cannot even be read fails verify; it does not abort
+            # the run with a traceback (step 5 fix round 4).
+            print(f"ERROR [{camp_root.name}]: verify could not complete: "
+                  f"{type(exc).__name__}: {exc}")
+            any_fail = True
+            continue
         if report.errors:
             for e in report.errors:
                 print(f"ERROR [{camp_root.name}]: {e}")
@@ -1904,6 +3077,232 @@ def cmd_mission_graph(args) -> int:
 
 def cmd_mission(args) -> int:
     return args.mission_fn(args)
+
+
+def cmd_kernel_policy_check(args) -> int:
+    """Lean toolchain floor + shrink-only exception list (spec 5.1). Exit 1 if any problem.
+
+    With --base REF, also enforces that the exception list only shrinks relative to
+    REF: the base-ref copy of the exceptions file is read with `git show`, treating
+    "path does not exist at REF" as a brand-new file (every current entry then counts
+    as added) and any other git error as a hard failure."""
+    import subprocess
+
+    from .checks import kernel_policy as kp
+
+    root = Path(args.root)
+    exceptions_path = Path(args.exceptions) if args.exceptions else root / "kernel_policy_exceptions.toml"
+    try:
+        exceptions = kp.load_exceptions(exceptions_path)
+    except ValueError as e:
+        print(e)
+        return 1
+    projects = kp.find_projects(root)
+    problems = kp.policy_problems(root, exceptions)
+    base = getattr(args, "base", None)
+    if base:
+        try:
+            relpath = exceptions_path.resolve().relative_to(root.resolve())
+        except ValueError:
+            relpath = Path(exceptions_path.name)
+        result = subprocess.run(["git", "show", f"{base}:{relpath.as_posix()}"],
+                                cwd=root, capture_output=True, text=True)
+        if result.returncode == 0:
+            base_text = result.stdout
+        elif "does not exist in" in result.stderr or "exists on disk, but not in" in result.stderr:
+            base_text = None
+        else:
+            print(f"kernel-policy check: cannot read {relpath} at {base}: {result.stderr.strip()}")
+            return 1
+        try:
+            problems += kp.shrink_problems(base_text, exceptions)
+        except ValueError as e:
+            print(e)
+            return 1
+    if problems:
+        for p in problems:
+            print(p)
+        return 1
+    print(f"kernel policy: OK ({len(projects)} projects, {len(exceptions)} exceptions)")
+    return 0
+
+
+def _trust_kwargs(args) -> dict:
+    """The --trusted-env / --trusted-manifest / --olean-dir options that were given, as keyword arguments."""
+    kw = {}
+    if getattr(args, "trusted_env", None):
+        kw["trusted_env"] = Path(args.trusted_env)
+    if getattr(args, "trusted_manifest", None):
+        kw["manifest"] = Path(args.trusted_manifest)
+    if getattr(args, "olean_dirs", None):
+        kw["untrusted_paths"] = [Path(d) for d in args.olean_dirs]
+    if getattr(args, "memory_mb", None) is not None:
+        kw["memory_mb"] = args.memory_mb or None
+    return kw
+
+
+def _source_sha256(path) -> "str | None":
+    """sha256 of the `--file` source a check was given, or None (no file, or unreadable)."""
+    import hashlib as _hashlib
+    if not path:
+        return None
+    try:
+        return _hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def _staleness(args, module) -> dict:
+    """The honest stale-build guard (final review I4): {"source_mtime", "olean_mtime", "stale"} for --file against
+    the module's .olean as an import resolves it in <project>/.lake/build/lib/lean and the --olean-dir dirs ({} when
+    there is no --file, no single module or no built olean). `stale` is true when --file is newer than that olean: the build is
+    older than the source being asserted. It catches a forgotten rebuild, not an adversary (mtimes are settable)."""
+    import os as _os
+
+    from .checks.lean_replay import resolve_olean, submission_paths
+    if not getattr(args, "file", None) or not module:
+        return {}
+    try:
+        dirs = submission_paths(Path(args.project), getattr(args, "olean_dirs", None) or ())
+        olean = resolve_olean(dirs, module)
+        src_m = _os.path.getmtime(args.file)
+    except (OSError, ValueError):
+        return {}
+    if not olean:
+        return {}                     # nothing built to compare with: the replay reports the missing module
+    ol_m = _os.path.getmtime(olean)
+    return {"source_mtime": src_m, "olean_mtime": ol_m, "stale": src_m > ol_m}
+
+
+def cmd_probe_negation(args) -> int:
+    """Negation probe of one theorem's ELABORATED constant (checks/negation_probe.py), run on the module's KERNEL
+    REPLAY into the pinned trusted env; the module itself is never imported.
+
+    Exit 0 PROBE_ONLY or WITNESSED, 1 VACUOUS or REFUTED, 2 ERROR (including an unbuilt module, no trusted env or
+    manifest, or any unexpected failure). With --json, stdout is exactly {"verdict": ..., "detail": ...,
+    "module": ..., "theorem": <the qualified name probed>, "source_sha256": <sha256 of --file, or null>,
+    "olean_sha256": ..., "olean_closure": [...]} (the last two when the module was replayed). --file only qualifies a
+    short --theorem and is hashed into source_sha256; the statement is never read from it."""
+    import json as _json
+    import shlex
+
+    from .checks import negation_probe as np_
+    from .checks.negation_probe import ProbeResult, ProbeSpec, TACTIC_IMPORTS
+
+    theorem = args.theorem
+    stale = _staleness(args, args.module)
+    try:
+        if args.file:
+            theorem = np_.qualify(Path(args.file).read_text(encoding="utf-8"), theorem)
+        if stale.get("stale"):
+            res = ProbeResult("ERROR", f"--file {args.file} is newer than the olean of {args.module}: a stale "
+                                       "build; rebuild the module, then re-run the probe")
+        else:
+            spec = ProbeSpec(args.module, theorem, args.witness,
+                             tuple(args.imports) if args.imports is not None else TACTIC_IMPORTS)
+            res = np_.run_probe(spec, Path(args.project),
+                                wrapper=None if args.wrapper is None else shlex.split(args.wrapper),
+                                timeout=args.timeout, **_trust_kwargs(args))
+    except Exception as exc:  # any surprise is ERROR (exit 2), never a traceback or a failing verdict
+        res = ProbeResult("ERROR", f"probe-negation failed: {type(exc).__name__}: {exc}")
+    if args.json:
+        # Ruling 12: name what was probed and the source it came from (`mission checks-record`).
+        out = res.to_json()
+        out.update(module=args.module, theorem=theorem, source_sha256=_source_sha256(args.file), **stale)
+        print(_json.dumps(out))
+    else:
+        print(f"probe-negation {args.theorem}: {res.verdict} -- {res.detail}")
+    return {"PROBE_ONLY": 0, "WITNESSED": 0, "VACUOUS": 1, "REFUTED": 1}.get(res.verdict, 2)
+
+
+def cmd_fingerprint(args) -> int:
+    """Statement fingerprint of each target (checks/fingerprint.py): one `<target> <sha256>` line per target, or with
+    --json {"fingerprints": {...}, "olean_sha256": <closure digest>, "olean_closure": [[module, part, sha256], ...],
+    "module": ..., "theorem": ..., "source_sha256": <sha256 of --file, or null>} (module and theorem are null unless
+    there is exactly one --import and one --target), plus "axioms" (the replay's) and "mode". The optional --file is
+    only hashed, into source_sha256, which `mission checks-record` compares with the node's artifact. The modules are
+    KERNEL-REPLAYED into the pinned trusted env, never imported. --mode value fingerprints a `def … : Prop`'s VALUE
+    (what `mission freeze --fingerprints` records for a definition-form statement); `checks-record` takes only a
+    type-mode JSON, the theorem's statement.
+
+    Exit 0 when every target was fingerprinted, 2 otherwise (a missing target, a refusal, a Lean error, no trusted
+    env or manifest). Trust comes from --trusted-env (default $TELPERION_LEAN_ENV), never from --project."""
+    import json as _json
+    import shlex
+
+    from .checks import fingerprint
+
+    stale = _staleness(args, args.imports[0] if len(args.imports) == 1 else None)
+    try:
+        if stale.get("stale"):
+            raise ValueError(f"--file {args.file} is newer than the olean of {args.imports[0]}: a stale build; "
+                             "rebuild the module, then re-run the fingerprint")
+        fps = fingerprint.run_fingerprint(Path(args.project), args.imports, args.targets,
+                                          wrapper=None if args.wrapper is None else shlex.split(args.wrapper),
+                                          timeout=args.timeout, mode=args.mode, **_trust_kwargs(args))
+    except ValueError as exc:
+        if args.json:
+            print(_json.dumps({"error": str(exc)}))
+        else:
+            print(f"fingerprint: {exc}")
+        return 2
+    if args.json:
+        # Ruling 12: `module`/`theorem` only when there is exactly one; `source_sha256` of --file.
+        print(_json.dumps({"fingerprints": {t: fps[t] for t in args.targets},
+                           "olean_sha256": getattr(fps, "olean_sha256", None),
+                           "olean_closure": getattr(fps, "olean_closure", []),
+                           "module": args.imports[0] if len(args.imports) == 1 else None,
+                           "theorem": args.targets[0] if len(args.targets) == 1 else None,
+                           "source_sha256": _source_sha256(args.file),
+                           "axioms": getattr(fps, "axioms", None), "mode": args.mode,
+                           "trusted_env_sha256": getattr(fps, "trusted_env_sha256", None), **stale}))
+        return 0
+    for t in args.targets:
+        print(f"{t} {fps[t]}")
+    return 0
+
+
+def cmd_trusted_manifest(args) -> int:
+    """`trusted-manifest build`: write the sha256 manifest of the pinned env's trusted files (checks/lean_replay.py)
+    to --out (default: outside the env, see lean_replay.default_manifest_path). `verify`: check it. Exit 0 or 2."""
+    from .checks import lean_replay
+
+    try:
+        if args.trusted_manifest_cmd == "build":
+            path = lean_replay.build_trusted_manifest(args.env, args.out, force=args.force)
+            print(f"trusted manifest written: {path}")
+        else:
+            pinned = lean_replay.pinned_env(args.env)
+            path = Path(args.out) if args.out else lean_replay.default_manifest_path(pinned.root)
+            lean_replay.verify_trusted_manifest(pinned, path)
+            print(f"trusted manifest OK: {path}")
+    except (OSError, ValueError) as exc:
+        print(f"trusted-manifest: {exc}")
+        return 2
+    return 0
+
+
+def _add_statement_fingerprint_args(p) -> None:
+    """`mission freeze`/`unfreeze --fingerprints` and the Lean options it runs with (step 5 Task 6)."""
+    p.add_argument("--fingerprints", action="store_true",
+                   help="also record every node's statement fingerprint in FREEZE.toml [fingerprints], computed "
+                        "with Lean from its statement file (needs the pinned env); without it none are recorded "
+                        "and post-cutoff [checks] are refused ('statement fingerprint not frozen'). NOT a sandbox: "
+                        "it compiles the statement files")
+    p.add_argument("--trusted-env", default=None, metavar="DIR",
+                   help="with --fingerprints: the pinned Lean env (default: $TELPERION_LEAN_ENV)")
+    p.add_argument("--trusted-manifest", default=None, metavar="FILE",
+                   help="with --fingerprints: the trusted env's sha256 manifest (default as for `telperion "
+                        "fingerprint`)")
+    p.add_argument("--olean-dir", dest="olean_dirs", action="append", default=None, metavar="DIR",
+                   help="with --fingerprints: an untrusted olean dir a statement may import from, besides "
+                        "<campaign>/lean/.lake/build/lib/lean (repeatable)")
+    p.add_argument("--memory-mb", type=int, default=None, metavar="MB",
+                   help="with --fingerprints: Lean's --memory bound (default 8192; 0 for none)")
+    p.add_argument("--wrapper", default=None,
+                   help="with --fingerprints: command prefix before the pinned `lean` (default: leanlock with one "
+                        "slot when ~/hodge-engine/leanlock.sh exists; '' for none)")
+    p.add_argument("--timeout", type=int, default=None, help="with --fingerprints: seconds for each Lean run")
 
 
 def main(argv=None) -> int:
@@ -2089,10 +3488,115 @@ def main(argv=None) -> int:
                    help="also fail on warn-level issues (trivial/Prop:=True stubs)")
     p.set_defaults(fn=cmd_lint_lean)
 
+    p = sub.add_parser("lint-provenance",
+                       help="provenance-header lint for ported files (spec 7.4): "
+                            "repo/file/commit in the first 30 lines")
+    p.add_argument("dir", nargs="?", default=".", help="campaign root (default: .)")
+    p.set_defaults(fn=cmd_lint_provenance)
+
     p = sub.add_parser("audit",
                        help="audit external Lean for sorry/axiom/stub/vacuity (the referee role)")
     p.add_argument("file")
     p.set_defaults(fn=cmd_audit)
+
+    p = sub.add_parser("audit-closure",
+                       help="kernel-level dependency-closure audit of theorems in a built Lake "
+                            "project (census by root, non-library constants, name scan, "
+                            "absences, axioms), run by kernel replay into the pinned trusted env (the "
+                            "project is never imported; --legacy-import for the old import path)")
+    p.add_argument("--project", required=True,
+                   help="the Lake project in which the modules are BUILT (its .lake/build/lib/lean is untrusted)")
+    p.add_argument("--legacy-import", dest="legacy_import", action="store_true",
+                   help="run the old script that IMPORTS the submission with `lake env lean` in --project. NOT "
+                        "ISOLATED: the submission's lakefile, initializers and elaborators run in the audit and "
+                        "can forge it; `mission checks-record` refuses its output for post-cutoff nodes")
+    p.add_argument("--spec", default=None, help="an AuditSpec as JSON (replaces the flags below)")
+    p.add_argument("--import", dest="imports", action="append", default=None, metavar="MODULE",
+                   help="module to import (repeatable)")
+    p.add_argument("--target", action="append", default=None, metavar="NAME",
+                   help="fully qualified theorem/definition to audit (repeatable)")
+    p.add_argument("--library-root", dest="library_root", action="append", default=None,
+                   help="root module counted as library, not listed (default: Init Lean Std "
+                        "Batteries Mathlib Aesop Qq ProofWidgets Plausible LeanSearchClient "
+                        "ImportGraph Lake Cli)")
+    p.add_argument("--scan", action="append", default=None, metavar="SUBSTRING",
+                   help="case-insensitive substring to scan constant and module names for "
+                        "(repeatable; hits are reported, not failed)")
+    p.add_argument("--absent-const", dest="absent_const", action="append", default=None,
+                   help="constant that must not be in the closure (default: sorryAx)")
+    p.add_argument("--absent-module", dest="absent_module", action="append", default=None,
+                   help="module-name prefix that must not be in the closure (repeatable)")
+    p.add_argument("--allow-axiom", dest="allow_axiom", action="append", default=None,
+                   help="allowed axiom (default: propext Quot.sound Classical.choice)")
+    p.add_argument("--no-recursors", dest="no_recursors", action="store_true",
+                   help="reproduce the ConstantInfo.getUsedConstantsAsSet walk (no .rec for "
+                        "every inductive); the default adds them")
+    p.add_argument("--closure-out", dest="closure_out", default=None,
+                   help="write the full module<TAB>constant listing here (absolute path)")
+    p.add_argument("--fail-on-scan-hit", dest="fail_on_scan_hit", action="store_true")
+    p.add_argument("--wrapper", default=None,
+                   help="command prefix before the pinned `lean` (default: leanlock with one slot when "
+                        "~/hodge-engine/leanlock.sh exists; '' for none); with --legacy-import, before "
+                        "`lake env lean` (default: none)")
+    p.add_argument("--timeout", type=int, default=3600)
+    p.add_argument("--trusted-env", default=None, metavar="DIR",
+                   help="the PINNED Lean env whose toolchain and .lake packages are trusted (default: "
+                        "$TELPERION_LEAN_ENV). Nothing from --project is trusted")
+    p.add_argument("--trusted-manifest", default=None, metavar="FILE",
+                   help="the sha256 manifest of the trusted env's files, verified before every run (default: "
+                        "~/telperion-tools/trusted-manifests/<hash of the env's pins>.json)")
+    p.add_argument("--olean-dir", dest="olean_dirs", action="append", default=None, metavar="DIR",
+                   help="an extra untrusted olean dir to replay modules from, besides <project>/.lake/build/lib/lean "
+                        "(repeatable)")
+    p.add_argument("--memory-mb", type=int, default=None, metavar="MB",
+                   help="Lean's --memory bound for each run (default 8192; 0 for none). Best-effort until the "
+                        "sandbox")
+    p.add_argument("--script-path", dest="script_path", default=None,
+                   help="with --legacy-import: write the rendered script here and keep it (default: temp file in "
+                        "the project)")
+    p.add_argument("--render-only", dest="render_only", default=None, metavar="FILE",
+                   help="write the rendered Lean (the replay callback; the import script with --legacy-import) "
+                        "and exit without running it")
+    p.add_argument("--json", default=None, help="write the AuditResult as JSON here")
+    p.set_defaults(fn=cmd_audit_closure)
+
+    def _manifest_common(q):
+        q.add_argument("--project", required=True, help="the Lake project directory")
+        q.add_argument("--include", action="append", default=None, metavar="GLOB",
+                       help="source glob relative to the project (default: **/*.lean; .lake and "
+                            ".git are always excluded)")
+        q.add_argument("--packages-dir", dest="packages_dir", default=None,
+                       help="dependency checkout dir (default: lake-manifest packagesDir)")
+        q.add_argument("--tool", action="append", default=None, metavar="LABEL=PATH",
+                       help="tool binary to pin (checker, exporter, second kernel, sandbox shim)")
+        q.add_argument("--extra", action="append", default=None, metavar="LABEL=PATH",
+                       help="any other file to pin (Comparator JSON configs, scripts)")
+        q.add_argument("--patch", action="append", default=None, metavar="PACKAGE=PATCHFILE",
+                       help="patch whose reverse application is checked against that package")
+        q.add_argument("--include-ignored", dest="include_ignored", action="store_true",
+                       help="also list git-ignored files inside each package (outside .lake/)")
+        q.add_argument("--no-toolchain-binary", dest="no_toolchain_binary", action="store_true",
+                       help="do not hash the elan `lean` binary named by lean-toolchain")
+
+    p = sub.add_parser("freeze-manifest",
+                       help="pin a Lake project's source state (sources, lake files, toolchain, "
+                            "dependency git state, tool binaries, configs) as JSON")
+    _manifest_common(p)
+    p.add_argument("--out", required=True, help="manifest JSON to write")
+    p.add_argument("--text", default=None, help="also write a one-line-per-file text rendering")
+    p.add_argument("--no-timestamp", dest="no_timestamp", action="store_true",
+                   help="omit `created` (the digest never includes it)")
+    p.set_defaults(fn=cmd_freeze_manifest)
+
+    p = sub.add_parser("verify-manifest",
+                       help="re-freeze with the manifest's own options and diff; exit 1 on any change")
+    p.add_argument("--project", required=True, help="the Lake project directory")
+    p.add_argument("--manifest", required=True, help="the manifest JSON written by freeze-manifest")
+    p.add_argument("--tool", action="append", default=None, metavar="LABEL=PATH",
+                   help="re-point a tool label whose binary moved (content is still compared)")
+    p.add_argument("--out", default=None, help="write the recomputed manifest here")
+    p.add_argument("--json", default=None, help="write the diff as JSON here")
+    p.set_defaults(fn=cmd_verify_manifest)
 
     p = sub.add_parser("sonc",
                        help="find + verify a SONC circuit-polynomial nonnegativity certificate")
@@ -2266,6 +3770,75 @@ def main(argv=None) -> int:
                    help="granting identity (default: `git config user.email`); recorded in [grant]")
     p.set_defaults(mission_fn=cmd_mission_grant)
 
+    # freeze CAMPAIGN [--session S] [--identity I]
+    p = msub.add_parser("freeze",
+                        help="record a campaign-level statement freeze (FREEZE.toml); "
+                             "a post-cutoff node may not be granted until its campaign is "
+                             "frozen")
+    p.add_argument("campaign")
+    p.add_argument("--session", default=None,
+                   help="freezing session id (default: $CLAUDE_SESSION_ID); recorded in "
+                        "FREEZE.toml")
+    p.add_argument("--identity", default=None,
+                   help="freezing identity (default: `git config user.email`); recorded in "
+                        "FREEZE.toml")
+    p.add_argument("--add", action="store_true",
+                   help="the campaign is frozen: record the nodes added since, at the unchanged version (their "
+                        "statement hashes, with --fingerprints their fingerprints, and new project imports); "
+                        "nothing already recorded changes")
+    _add_statement_fingerprint_args(p)
+    p.set_defaults(mission_fn=cmd_mission_freeze)
+
+    # deviations-readback CAMPAIGN [--session S] [--identity I] [--date D]
+    p = msub.add_parser("deviations-readback",
+                        help="record an independent read-back of DEVIATIONS.md (spec "
+                             "7.3); required, from an identity/session distinct from a "
+                             "node's own author, before that node can be granted "
+                             "post-cutoff")
+    p.add_argument("campaign")
+    p.add_argument("--session", default=None,
+                   help="auditing session id (default: $CLAUDE_SESSION_ID); recorded in "
+                        "DEVIATIONS.readback.toml")
+    p.add_argument("--identity", default=None,
+                   help="auditing identity (default: `git config user.email`); recorded "
+                        "in DEVIATIONS.readback.toml")
+    p.add_argument("--date", default=None,
+                   help="read-back date (default: today)")
+    p.set_defaults(mission_fn=cmd_mission_deviations_readback)
+
+    # unfreeze CAMPAIGN --author A --reason R --readback-identity I
+    p = msub.add_parser("unfreeze",
+                        help="bump a campaign's freeze with a recorded, independently "
+                             "read-back reason, and re-hash every current statement")
+    p.add_argument("campaign")
+    p.add_argument("--author", required=True,
+                   help="who is making this change")
+    p.add_argument("--reason", required=True,
+                   help="why the freeze needs to move (e.g. which statement changed)")
+    p.add_argument("--readback-identity", required=True, dest="readback_identity",
+                   help="an INDEPENDENT identity (not --author) that read back the new "
+                        "hashes before this was recorded; refused if it equals --author")
+    _add_statement_fingerprint_args(p)
+    p.set_defaults(mission_fn=cmd_mission_unfreeze)
+
+    # audit-file CAMPAIGN
+    p = msub.add_parser("audit-file",
+                        help="generate <root>/lean/Audit.lean: one `import` per proved "
+                             "node's artifact module, then one `#print axioms <theorem>` "
+                             "per proved node")
+    p.add_argument("campaign")
+    p.set_defaults(mission_fn=cmd_mission_audit_file)
+
+    # audit-crosscheck --print-axioms-out F --closure-json F
+    p = msub.add_parser("audit-crosscheck",
+                        help="cross-check `lake env lean Audit.lean`'s captured output "
+                             "against a closure audit's per-target axiom lists")
+    p.add_argument("--print-axioms-out", required=True, type=Path, dest="print_axioms_out",
+                   help="captured stdout of `lake env lean Audit.lean`")
+    p.add_argument("--closure-json", required=True, type=Path, dest="closure_json",
+                   help="the file `telperion audit-closure --json FILE` wrote")
+    p.set_defaults(mission_fn=cmd_mission_audit_crosscheck)
+
     # provenance-report [CAMPAIGN] [--strict]
     p = msub.add_parser("provenance-report",
                         help="per campaign: proved nodes whose read-back is unverified or "
@@ -2334,6 +3907,63 @@ def main(argv=None) -> int:
     p.add_argument("--run-url", default=None, dest="run_url")
     p.set_defaults(mission_fn=cmd_mission_ci_record)
 
+    # rejudge-record SLUG --campaign C --log PATH --comparator-tag TAG [--peak-rss-kb N] [--note S]
+    p = msub.add_parser("rejudge-record",
+                        help="record a local Comparator run with nanoda ON for a heavy node")
+    p.add_argument("slug")
+    p.add_argument("--campaign", required=True)
+    p.add_argument("--log", required=True, type=Path)
+    p.add_argument("--comparator-tag", required=True, dest="comparator_tag")
+    p.add_argument("--peak-rss-kb", type=int, default=0, dest="peak_rss_kb")
+    p.add_argument("--note", default="")
+    p.set_defaults(mission_fn=cmd_mission_rejudge_record)
+
+    # checks-record SLUG --campaign C --probe-json F --closure-json F --fingerprint-json F
+    #               [--target NAME] [--note S]
+    p = msub.add_parser("checks-record",
+                        help="record the negation probe, closure audit and statement fingerprint "
+                             "(read from their JSON output) for a node")
+    p.add_argument("slug")
+    p.add_argument("--campaign", required=True)
+    p.add_argument("--probe-json", required=True, type=Path, dest="probe_json",
+                   help="`telperion probe-negation --json` output")
+    p.add_argument("--closure-json", required=True, type=Path, dest="closure_json",
+                   help="the file `telperion audit-closure --json FILE` wrote")
+    p.add_argument("--fingerprint-json", required=True, type=Path, dest="fingerprint_json",
+                   help="`telperion fingerprint --json` output")
+    p.add_argument("--target", default=None,
+                   help="the fingerprinted theorem (default and only allowed value: the node's registered "
+                        "theorem, the artifact declaration the grant gate matches)")
+    p.add_argument("--note", default="",
+                   help="free text; a PROBE_ONLY verdict passes only with 'signoff: <who>' here")
+    p.set_defaults(mission_fn=cmd_mission_checks_record)
+
+    # rejudge-backfill-closure SLUG --campaign C [--since 23bda8b16] [--rebind]
+    p = msub.add_parser("rejudge-backfill-closure",
+                        help="back-fill [rejudge].closure_sha256 for a node whose closure "
+                             "files are git-verified unchanged since --since; refuses "
+                             "(exit 2) if any closure file is dirty or was touched since")
+    p.add_argument("slug")
+    p.add_argument("--campaign", required=True)
+    p.add_argument("--since", default="23bda8b16",
+                   help="commit the re-judge queue started at (default: 23bda8b16)")
+    p.add_argument("--rebind", action="store_true",
+                   help="replace an EXISTING closure_sha256 (refused without this flag); "
+                        "same git rule, applied over the newly computed closure")
+    p.add_argument("--reason", default="",
+                   help="with --rebind: why the digest is re-bound; written into the note, "
+                        "replacing any earlier re-bind clause (required with --rebind)")
+    p.set_defaults(mission_fn=cmd_mission_rejudge_backfill_closure)
+
+    # second-kernel-mark SLUG --campaign C --route R
+    p = msub.add_parser("second-kernel-mark",
+                        help="set the durable second_kernel_route marker on a node; refused "
+                             "(exit 2) unless its current [rejudge] passes on that route")
+    p.add_argument("slug")
+    p.add_argument("--campaign", required=True)
+    p.add_argument("--route", required=True, choices=("comparator", "nanoda-direct"))
+    p.set_defaults(mission_fn=cmd_mission_second_kernel_mark)
+
     # verify [CAMPAIGN] [--deep-lean]
     p = msub.add_parser("verify", help="run the full invariant battery")
     p.add_argument("campaign", nargs="?", default=None)
@@ -2349,6 +3979,109 @@ def main(argv=None) -> int:
     p = msub.add_parser("graph", help="emit DOT-language dependency graph to stdout")
     p.add_argument("campaign", nargs="?", default=None)
     p.set_defaults(mission_fn=cmd_mission_graph)
+
+    kpp = sub.add_parser("kernel-policy", help="Lean toolchain floor + shrink-only exception list (spec 5.1)")
+    kpp_sub = kpp.add_subparsers(dest="kernel_policy_cmd", required=True)
+    p = kpp_sub.add_parser("check", help="print policy problems and exit 1 if any")
+    p.add_argument("--root", default=".", help="repo root to scan (default: .)")
+    p.add_argument("--exceptions", default=None,
+                   help="exceptions TOML (default: <root>/kernel_policy_exceptions.toml)")
+    p.add_argument("--base", default=None,
+                   help="base git ref; also enforce that the exception list only shrinks "
+                        "relative to this ref (read via `git show REF:<path>` in --root)")
+    p.set_defaults(fn=cmd_kernel_policy_check)
+
+    p = sub.add_parser("probe-negation",
+                       help="one-sided probe of a theorem's ELABORATED constant: VACUOUS (its premises "
+                            "prove False), REFUTED (plausible counterexample), WITNESSED, PROBE_ONLY or ERROR")
+    p.add_argument("--project", required=True,
+                   help="the Lake project in which --module is built (its .lake/build/lib/lean is untrusted)")
+    p.add_argument("--module", required=True,
+                   help="the theorem's own module, which must be BUILT in --project (lake build <module>); "
+                        "the statement is the elaborated constant's type, so local definitions, notation "
+                        "and attributes are exactly as in the file. An unbuilt module is ERROR")
+    p.add_argument("--theorem", required=True, help="the theorem's name (fully qualified unless --file is given)")
+    p.add_argument("--file", default=None,
+                   help="the Lean file declaring the theorem (pass the node's artifact); used ONLY to qualify a "
+                        "short --theorem with its namespace and hashed into the --json `source_sha256`, never to "
+                        "read the statement")
+    p.add_argument("--witness", default=None,
+                   help="a term proving `∃ <premises>, True` (the hypotheses are satisfiable)")
+    p.add_argument("--import", dest="imports", action="append", default=None, metavar="MODULE",
+                   help="trusted tactic module imported before --module is replayed (repeatable; default: Mathlib)")
+    p.add_argument("--wrapper", default=None,
+                   help="command prefix before the pinned `lean` (default: leanlock with one slot "
+                        "when ~/hodge-engine/leanlock.sh exists; '' for none)")
+    p.add_argument("--timeout", type=int, default=1800, help="seconds for the Lean run")
+    p.add_argument("--trusted-env", default=None, metavar="DIR",
+                   help="the PINNED Lean env whose toolchain and .lake packages are trusted (default: "
+                        "$TELPERION_LEAN_ENV; exit 2 if neither is set). Nothing from --project is trusted")
+    p.add_argument("--trusted-manifest", default=None, metavar="FILE",
+                   help="the sha256 manifest of the trusted env's files, verified before every run (default: "
+                        "~/telperion-tools/trusted-manifests/<hash of the env's pins>.json; build it with "
+                        "`telperion trusted-manifest build --env DIR`)")
+    p.add_argument("--olean-dir", dest="olean_dirs", action="append", default=None, metavar="DIR",
+                   help="an extra untrusted olean dir to replay modules from, besides <project>/.lake/build/lib/lean "
+                        "(repeatable)")
+    p.add_argument("--memory-mb", type=int, default=None, metavar="MB",
+                   help="Lean's --memory bound for each run (default 8192; 0 for none). Best-effort until the "
+                        "sandbox")
+    p.add_argument("--json", action="store_true",
+                   help='print {"verdict": ..., "detail": ..., "module": ..., "theorem": ..., "source_sha256": ..., '
+                        '"olean_sha256": ..., "olean_closure": ...} only')
+    p.set_defaults(fn=cmd_probe_negation)
+
+    p = sub.add_parser("fingerprint",
+                       help="sha256 of each theorem's statement, delta-unfolded past the library roots, "
+                            "binder-name-insensitive",
+                       description="Statement fingerprint. NOT a sandbox: building untrusted Lean (the imported "
+                                   "modules, a submitted text) runs that code with your permissions, so fingerprint "
+                                   "untrusted input only inside a sandbox (e.g. Comparator's Linux sandbox in CI).")
+    p.add_argument("--project", required=True, help="a built Lake project in which the imports resolve")
+    p.add_argument("--import", dest="imports", action="append", required=True, metavar="MODULE",
+                   help="module to import (repeatable)")
+    p.add_argument("--target", dest="targets", action="append", required=True, metavar="THEOREM",
+                   help="fully qualified theorem name (repeatable)")
+    p.add_argument("--file", default=None,
+                   help="the theorem's source file; only hashed, into the --json `source_sha256` that "
+                        "`mission checks-record` compares with the node's artifact")
+    p.add_argument("--mode", choices=("type", "value"), default="type",
+                   help="type (default): the target's TYPE, a theorem's statement; value: a `def … : Prop`'s VALUE, "
+                        "which equals type mode of a `theorem t : S` (anything else is refused)")
+    p.add_argument("--wrapper", default=None,
+                   help="command prefix before the pinned `lean` (default: leanlock with one slot "
+                        "when ~/hodge-engine/leanlock.sh exists; '' for none)")
+    p.add_argument("--timeout", type=int, default=1800, help="seconds for each Lean run")
+    p.add_argument("--trusted-env", default=None, metavar="DIR",
+                   help="the PINNED Lean env whose toolchain and .lake packages are trusted (default: "
+                        "$TELPERION_LEAN_ENV; exit 2 if neither is set). Nothing from --project is trusted")
+    p.add_argument("--trusted-manifest", default=None, metavar="FILE",
+                   help="the sha256 manifest of the trusted env's files, verified before every run (default: "
+                        "~/telperion-tools/trusted-manifests/<hash of the env's pins>.json; build it with "
+                        "`telperion trusted-manifest build --env DIR`)")
+    p.add_argument("--olean-dir", dest="olean_dirs", action="append", default=None, metavar="DIR",
+                   help="an extra untrusted olean dir to replay modules from, besides <project>/.lake/build/lib/lean "
+                        "(repeatable)")
+    p.add_argument("--memory-mb", type=int, default=None, metavar="MB",
+                   help="Lean's --memory bound for each run (default 8192; 0 for none). Best-effort until the "
+                        "sandbox")
+    p.add_argument("--json", action="store_true",
+                   help='print {"fingerprints": {...}, "olean_sha256": ..., "olean_closure": [...], "module": ..., '
+                        '"theorem": ..., "source_sha256": ...} (or {"error": ...}) only')
+    p.set_defaults(fn=cmd_fingerprint)
+
+    p = sub.add_parser("trusted-manifest",
+                       help="build or verify the sha256 manifest of a pinned Lean env's trusted files (the replay "
+                            "checks refuse to run without a matching one)")
+    tm_sub = p.add_subparsers(dest="trusted_manifest_cmd", required=True)
+    for name, what in (("build", "write"), ("verify", "check")):
+        q = tm_sub.add_parser(name, help=f"{what} the manifest of --env")
+        q.add_argument("--env", required=True, metavar="DIR", help="the pinned Lean env")
+        q.add_argument("--out", default=None, metavar="FILE",
+                       help="the manifest path (default: ~/telperion-tools/trusted-manifests/<hash>.json)")
+        if name == "build":
+            q.add_argument("--force", action="store_true", help="overwrite an existing manifest")
+        q.set_defaults(fn=cmd_trusted_manifest)
 
     args = ap.parse_args(argv)
     return args.fn(args)
