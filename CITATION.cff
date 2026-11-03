@@ -9,10 +9,13 @@ license:
   - Apache-2.0
   - CC-BY-4.0
   - BUSL-1.1
-version: v2.0.0
+version: v2.0.1
 date-released: 2026-11-03
-doi: "10.5281/zenodo.23924566"
+doi: "10.5281/zenodo.23932214"
 identifiers:
+  - type: doi
+    value: "10.5281/zenodo.23932214"
+    description: "Zenodo archive of release v2.0.1 (reference corrections only)"
   - type: doi
     value: "10.5281/zenodo.23924566"
     description: "Zenodo archive of release v2.0.0 (renamed The Boundaries of Class; entries 5 and 6 added)"
