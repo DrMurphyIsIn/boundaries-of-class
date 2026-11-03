@@ -2,6 +2,11 @@
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23550257.svg)](https://doi.org/10.5281/zenodo.23550257)
 
+> **This line of work continues in [The Boundaries of Class](https://github.com/DrMurphyIsIn/boundaries-of-class)**, which
+> imports this repository with its history and adds the later entries (two-sided class-number bounds for every imaginary
+> quadratic field, and the classification up to class number 3500). This repository stays as published, so its DOIs and
+> links keep working.
+
 This repository is our entry for Terence Tao's
 [experimental AI-math challenge](https://terrytao.wordpress.com/2026/10/20/an-experimental-ai-math-challenge-using-tenth-discriminant-bounds-to-explore-arguments-ruling-out-siegel-zeroes/)
 of 20 October 2026. The challenge is to take one of the new arguments around Siegel zeroes and the quasi-Riemann hypothesis, and
