@@ -160,8 +160,10 @@ beforehand.
 
 - **A fresh clone, built by these instructions.** On 3 November 2026 the repository was cloned from GitHub and this
   entry was built exactly as described below, in an empty directory with its own package store. Comparator then
-  accepted all 28 theorems again under both kernels. It ran on the same machine and with the same checker binaries, so
-  a replay elsewhere would still add something.
+  accepted all 28 theorems again under both kernels. A separate AI review session then repeated the fresh build from
+  its own copy, with its own package store and its own Mathlib cache download, with the same result. Both runs used the
+  same machine and the same checker binaries (the stock Comparator v4.34.0 build, lean4export and nanoda), so a replay
+  elsewhere would still add something.
 
 ## How to build and check it
 
