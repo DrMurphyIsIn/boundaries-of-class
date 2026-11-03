@@ -14,8 +14,10 @@
   dependencies at the revisions it pins (listed in `determinant/formalization/lake-manifest.json`).
 - **Comparator** (https://github.com/leanprover/comparator), with its **lean4export**, and **nanoda**
   (https://github.com/ammkrn/nanoda_lib) were used to check the proofs. They are not included here.
-- **Telperion** (`telperion/`), Business Source License 1.1; see `telperion/LICENSE`. Snapshot of development commit `5b8eea03`
-  (2026-10-18).
+- **Telperion** (`telperion/`), Business Source License 1.1; see `telperion/LICENSE` and `telperion/LICENSING.md`. A verbatim
+  copy of src/, docs/, examples/, scripts/ and the top-level licence, policy and package files of
+  https://github.com/DrMurphyIsIn/telperion at commit 49f930b (2026-10-31), pinned file by file in `telperion/VENDORED.json`.
+  Releases v1.0.0 to v1.4.0 carried a snapshot of development commit `5b8eea03` (2026-10-18) instead.
 - `determinant/formalization/CN1/` and `determinant/formalization/CN1Challenges/` are verbatim copies of files from
   `formalization/`; `determinant/formalization/ELEMNegControls/Tamper/` copies `formalization/CN1Challenges/Tamper/`.
 - `hcn/formalization/CN1/` is a verbatim copy of `formalization/CN1/`. `hcn/certificates/data/` holds class numbers computed by

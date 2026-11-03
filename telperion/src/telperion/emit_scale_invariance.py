@@ -19,17 +19,27 @@ conditions that keep every denominator well-defined:
       field_simp
       ring
 
-EXAMPLES.  Two textbook instances of such degeneracy are the shipped examples:
-  1. PARAMETER CANCELLATION: a per-trade return ``(pnl − fee) / notional`` in which a
-     sizing parameter ``s`` multiplies both the numerator and the denominator, so
-     the return does not depend on ``s`` (pure ``field_simp; ring`` cancellation).
-  2. DEGREE-0 HOMOGENEITY: the squared Sharpe ratio ``mean²·n/variance`` of a sample
-     is unchanged when every observation is scaled by the same ``λ > 0``
-     (numerator and denominator both scale by ``λ²``).  It is shipped in its
-     rational form for a fixed small ``n``.
+MOTIVATING STRUCTURE — the Arda trading system's leverage↔position_size
+degeneracy in the Sharpe objective.  In
+``src/arda/acceleration/rust_core.py`` (~L1250–1318) and its Rust twin
+``arda_rust/src/backtesting.rs`` (``compute_weighted_sharpe``, ~L317–330):
 
-Such certificates identify parameters that an optimizer cannot usefully tune,
-because the objective does not depend on them.
+    pnl_i          = Δprice_i · direction_i · pos_size,   pos_size = capital·s·L/price
+    fee_i          ∝ notional = capital · s · L
+    trade_return_i = (pnl_i − fee_i) / (capital · s · L)
+
+Two exact algebraic facts fall out and are the shipped examples:
+  1. ``position_size`` (``s``) CANCELS entirely from ``trade_return`` — it sits in
+     both the ``pnl``/``fee`` numerator and the denominator ⟹ ``trade_return`` is
+     independent of ``s`` (pure ``field_simp; ring`` cancellation).
+  2. ``leverage`` (``L``) scales ``trade_return`` by ``1/L`` ⟹ the Sharpe ratio
+     ``mean/std·√n`` — equivalently ``Sharpe² = mean²·n/variance`` — is INVARIANT
+     under scaling ``L`` (numerator and denominator scale identically).  We ship
+     the ``Sharpe²`` (rational, degree-0-homogeneous) form for a fixed small
+     ``n``, which is pure ``field_simp; ring``.
+
+This is why CLAUDE.md forbids ``leverage`` as an evolvable gene: it is
+mathematically degenerate with ``position_size`` in the Sharpe objective.
 
 NEGATIVE CONTROL: ``<name>_certificate`` RAISES ``ValueError`` when the objective
 GENUINELY depends on the parameter / is not degree-0 homogeneous (the difference
@@ -37,8 +47,8 @@ does not cancel to 0) — the anti-phantom guard.
 
 HONEST SCOPE: this proves ONLY the exact algebraic invariance of the given
 rational objective under the given transformation.  It says nothing about the
-statistical content of the Sharpe estimator, nor does it close any downstream
-obligation.
+statistical content of the Sharpe estimator, nor does it close any trading or
+downstream obligation.
 """
 from __future__ import annotations
 
@@ -275,7 +285,8 @@ def certify_scale_invariance_point(family, pt, name):
 class ScaleInvarianceEmitter(Emitter):
     """Emit ``f(scale•args) = f(args)`` (homogeneity) or ``f(p) = f(p')``
     (parameter cancellation) over ℝ via ``field_simp; ring`` under the nonzero
-    denominator side conditions."""
+    denominator side conditions.  Models the Arda leverage↔position_size Sharpe
+    degeneracy (``rust_core.py`` / ``backtesting.rs``)."""
 
     def __post_init__(self):
         self.kind = "scale_invariance"

@@ -3,6 +3,7 @@ from __future__ import annotations
 from . import adapter_affine_hull_dominance  # noqa: F401
 from . import adapter_anchored_monotone_extension  # noqa: F401
 from . import adapter_bragg_floor  # noqa: F401
+from . import adapter_bohr_mollerup_gamma_ratio  # noqa: F401
 from . import adapter_c_g_round  # noqa: F401
 from . import adapter_complex_re_im_split  # noqa: F401
 from . import adapter_concave_pooled_induction  # noqa: F401
@@ -20,6 +21,8 @@ from . import adapter_exp_enclosure  # noqa: F401
 from . import adapter_exp_laurent_identity  # noqa: F401
 from . import adapter_exp_threshold  # noqa: F401
 from . import adapter_scaled_interval_eval  # noqa: F401
+from . import adapter_quadratic_order_root_table  # noqa: F401
+from . import adapter_nat_root_bracket_table  # noqa: F401
 from . import adapter_factored_endpoint_enclosure  # noqa: F401
 from . import adapter_finite_argmax  # noqa: F401
 from . import adapter_fwd_telescope  # noqa: F401
@@ -34,6 +37,7 @@ from . import adapter_monotone_tail  # noqa: F401
 from . import adapter_nullstellensatz  # noqa: F401
 from . import adapter_order_balance  # noqa: F401
 from . import adapter_preordering_multiplier  # noqa: F401
+from . import adapter_range_completeness  # noqa: F401
 from . import adapter_rational_identity  # noqa: F401
 from . import adapter_rational_s_o_s  # noqa: F401
 from . import adapter_real_nullstellensatz  # noqa: F401
@@ -58,6 +62,7 @@ __all__ = [
     'adapter_affine_hull_dominance',
     'adapter_anchored_monotone_extension',
     'adapter_bragg_floor',
+    'adapter_bohr_mollerup_gamma_ratio',
     'adapter_c_g_round',
     'adapter_complex_re_im_split',
     'adapter_concave_pooled_induction',
@@ -75,6 +80,8 @@ __all__ = [
     'adapter_exp_laurent_identity',
     'adapter_exp_threshold',
     'adapter_scaled_interval_eval',
+    'adapter_quadratic_order_root_table',
+    'adapter_nat_root_bracket_table',
     'adapter_factored_endpoint_enclosure',
     'adapter_finite_argmax',
     'adapter_fwd_telescope',
@@ -89,6 +96,7 @@ __all__ = [
     'adapter_nullstellensatz',
     'adapter_order_balance',
     'adapter_preordering_multiplier',
+    'adapter_range_completeness',
     'adapter_rational_identity',
     'adapter_rational_s_o_s',
     'adapter_real_nullstellensatz',

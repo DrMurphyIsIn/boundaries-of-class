@@ -1,7 +1,8 @@
 """Concave-stationary-max emitter — a stationary point of a strictly concave
 objective is its unique maximizer.
 
-Motivating instance: the Kelly-fraction objective
+Motivating instance (Arda trading, ``src/arda/risk/risk_bounds.py:64``): the
+Kelly-fraction objective
 
     g(f) = wr·ln(1 + f·b) + (1 − wr)·ln(1 − f)          on  f ∈ (0, 1),
 

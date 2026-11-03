@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 import re
+import stat
 import tempfile
 from pathlib import Path
 from typing import Optional, Tuple
@@ -223,6 +224,11 @@ class Grant:
     date: str
     identity: str
     session: str
+    #: True when the gate that wrote this grant required a passing [checks] record for the node
+    #: (`provenance.checks_required`, gate 2026-10-29.1+). It keeps the requirement once
+    #: granted, so back-dating `created` afterwards cannot drop it (Ruling 12). Written only
+    #: when True, so every older grant round-trips unchanged.
+    checks_required: bool = False
 
     def __post_init__(self):
         for f in ("artifact_sha256", "statement_sha256", "gate_version", "date",
@@ -377,6 +383,113 @@ class CIRecord:
 
 
 @dataclass(frozen=True)
+class RejudgeRecord:
+    """A local Comparator run with nanoda ON for a `heavy_certificates` node (spec 5.1, step 0).
+
+    Hosted runners (16 GB) cannot replay heavy certificates under nanoda, so these nodes are
+    judged Lean-kernel-only in CI. They stay proved only with a passing re-judge on the CURRENT
+    artifact, run on a large machine at the pinned telperion/NANODA_REV.
+    """
+    date: str
+    machine: str
+    nanoda_rev: str
+    comparator_tag: str
+    artifact_sha256: str
+    verdict: str
+    log_sha256: str
+    peak_rss_kb: int = 0
+    note: str = ""
+    #: sha256 over the artifact's whole import closure (step 0b Task 1, 2026-10-28) --
+    #: `provenance.closure_digest`. "" on a record written before this field existed
+    #: (`rejudge_problem` then reports it as unproven against the closure until it is
+    #: back-filled, Task 2, or re-judged).
+    closure_sha256: str = ""
+    #: How many files `closure_sha256` covers (`len(provenance.closure_files(...))`),
+    #: carried alongside the digest so a reader does not have to recompute it to see the
+    #: closure's size.
+    closure_files: int = 0
+    #: How this record was produced. "comparator" (default) = a Comparator run (nanoda
+    #: ON), as every record before this field existed. A later route (e.g.
+    #: "nanoda-direct", step 0b Task 3) is reported differently by
+    #: `render_provenance_report` -- never read as a Comparator run.
+    route: str = "comparator"
+
+    def __post_init__(self):
+        for f in ("date", "machine", "nanoda_rev", "comparator_tag", "artifact_sha256", "log_sha256"):
+            if not str(getattr(self, f)).strip():
+                raise SchemaError(f"rejudge.{f} must be non-empty")
+        if self.verdict not in ("pass", "fail"):
+            raise SchemaError(f"rejudge.verdict must be 'pass' or 'fail', not {self.verdict!r}")
+        if not str(self.route).strip():
+            raise SchemaError("rejudge.route must be non-empty")
+
+
+#: `telperion probe-negation` verdicts (checks/negation_probe.VERDICTS, kept here so the schema
+#: does not import the checks package).
+PROBE_VERDICTS = ("VACUOUS", "REFUTED", "PROBE_ONLY", "WITNESSED", "ERROR")
+
+_SHA256_RE = re.compile(r"[0-9a-f]{64}")
+
+
+@dataclass(frozen=True)
+class ChecksRecord:
+    """The spec 5.2 checks on a node's artifact (step 4 Task 4), written by `mission checks-record`.
+
+    Nodes created on or after `provenance.CHECKS_CUTOFF` (or with no `created` date) are
+    granted `proved` only with a record whose probe verdict is WITNESSED (or PROBE_ONLY with a
+    reviewer's `signoff:` in the note), whose closure verdict is PASS, and whose
+    `artifact_sha256` is the artifact on disk (`provenance.checks_problem`). The verdicts are
+    read from the checks' own JSON output, never from flags.
+    """
+    date: str
+    #: sha256 of the artifact source file (`node.proof.artifact`) when the checks were recorded.
+    artifact_sha256: str
+    #: `lean_replay.closure_digest` of the whole replayed untrusted olean closure, which the
+    #: probe and fingerprint JSONs must both name (Ruling 9). Recorded, not re-checked at grant
+    #: time: recomputing it needs a build, so staleness is caught by `artifact_sha256`.
+    olean_sha256: str
+    probe_verdict: str
+    closure_verdict: str
+    #: `telperion fingerprint` of the theorem's statement.
+    statement_fingerprint: str
+    #: The constant the fingerprint (and the closure audit) is of.
+    theorem: str = ""
+    note: str = ""
+    #: The replay's axiom list (`collectAxioms` over the target module's constants), which the probe and the
+    #: fingerprint JSONs must both carry and agree on (final review I3). None: an older record, which
+    #: `provenance.checks_problem` refuses.
+    axioms: Optional[Tuple[str, ...]] = None
+    #: True when the closure audit ran as a kernel-replay callback (`audit-closure` without --legacy-import) on the
+    #: same replayed closure as the probe and the fingerprint (its JSON's `olean_sha256` is `olean_sha256`; step 5
+    #: Task 7). False: the audit imported the submission (`--legacy-import`, or a record from before step 5), which
+    #: `provenance.checks_problem` refuses. Written only when true.
+    closure_isolated: bool = False
+
+    def __post_init__(self):
+        if not str(self.date).strip():
+            raise SchemaError("checks.date must be non-empty")
+        if not isinstance(self.closure_isolated, bool):
+            raise SchemaError(f"checks.closure_isolated must be true or false, not {self.closure_isolated!r}")
+        for f in ("artifact_sha256", "olean_sha256", "statement_fingerprint"):
+            if not _SHA256_RE.fullmatch(str(getattr(self, f))):
+                raise SchemaError(f"checks.{f} must be 64 lowercase hex characters, "
+                                  f"not {getattr(self, f)!r}")
+        if self.probe_verdict not in PROBE_VERDICTS:
+            raise SchemaError(f"checks.probe_verdict must be one of {PROBE_VERDICTS!r}, "
+                              f"not {self.probe_verdict!r}")
+        if self.closure_verdict not in ("PASS", "FAIL"):
+            raise SchemaError(f"checks.closure_verdict must be 'PASS' or 'FAIL', "
+                              f"not {self.closure_verdict!r}")
+        if self.axioms is not None and (not isinstance(self.axioms, tuple)
+                                        or not all(isinstance(a, str) and a for a in self.axioms)):
+            raise SchemaError(f"checks.axioms must be a list of axiom names, not {self.axioms!r}")
+
+
+#: The keys a `[checks]` table may carry (one per ChecksRecord field).
+_CHECKS_KEYS = frozenset(ChecksRecord.__dataclass_fields__)
+
+
+@dataclass(frozen=True)
 class Node:
     name: str
     title: str
@@ -403,6 +516,12 @@ class Node:
     requires_ci_job: str = ""
     #: The recorded passing run of that job (see CIRecord); written by `mission ci-record`.
     ci_record: Optional[CIRecord] = None
+    #: A passing LOCAL re-judge (Comparator, nanoda ON) on the current artifact, for a
+    #: `heavy_certificates` node (see RejudgeRecord); written by `mission rejudge-record`.
+    rejudge: Optional[RejudgeRecord] = None
+    #: The spec 5.2 checks (negation probe, closure audit, fingerprint) on the current
+    #: artifact (see ChecksRecord); written by `mission checks-record`.
+    checks: Optional[ChecksRecord] = None
     #: True when the artifact's exact certificates (`decide +kernel` LDL^T blocks, ~16 GB to
     #: replay) cannot be run through nanoda on a hosted runner: the judge then asserts the
     #: node with `enable_nanoda = false` and the record says "Lean kernel only".
@@ -420,6 +539,13 @@ class Node:
     #: <m>` each, peak RSS logged), before it builds the challenge. () = the ladder's segment
     #: discovery, unchanged. E.g. the HODGE-1 certificates (13.4 GB peak on a 16 GB runner).
     heavy_build_targets: Tuple[str, ...] = ()
+    #: A DURABLE registry marker naming the second-kernel route this node's proved status
+    #: claims (Controller Ruling 0b-9, 2026-10-28): "" (no claim), "comparator", or
+    #: "nanoda-direct". Set by `mission second-kernel-mark` only once the node's current
+    #: `[rejudge]` passes on that route. Without it, deleting a `[rejudge]` table (or editing
+    #: its `route`) from a node that is neither heavy nor Lean-kernel-only silently dropped
+    #: (or changed) the claim: `rejudge_problem` then reports the marker's mismatch instead.
+    second_kernel_route: str = ""
     #: Top-level keys and tables present in the file that this schema does not model, kept
     #: verbatim so a write-back cannot destroy them. Audit 2026-09-19: a live node carries a
     #: `[nonvacuity]` table and a `proof.fidelity_note`, and any CLI mutation on it silently
@@ -444,6 +570,8 @@ class Node:
         if self.heavy_build_targets and self.judge_via != "heavy":
             raise SchemaError("heavy_build_targets needs judge_via = \"heavy\": only the heavy "
                               "workflow reads it")
+        object.__setattr__(self, "second_kernel_route",
+                           _second_kernel_route(self.second_kernel_route))
         # Coerce depends_on to tuple if a list was passed
         if not isinstance(self.depends_on, tuple):
             object.__setattr__(self, "depends_on", tuple(self.depends_on))
@@ -484,8 +612,8 @@ _MODELLED_NODE_KEYS = frozenset({
     "name", "title", "kind", "status", "statement_module", "source",
     "refutation_statement", "deprecated_reason", "created", "updated",
     "depends_on", "proof", "readback", "author", "grant", "comparator",
-    "requires_ci_job", "ci_record", "heavy_certificates", "judge_via", "compose",
-    "heavy_build_targets",
+    "requires_ci_job", "ci_record", "rejudge", "heavy_certificates", "judge_via", "compose",
+    "heavy_build_targets", "second_kernel_route", "checks",
 })
 
 
@@ -497,6 +625,18 @@ def _judge_via(v) -> str:
     v = str(v or "").strip()
     if v not in JUDGE_VIA:
         raise SchemaError(f"judge_via must be one of {JUDGE_VIA!r}, got {v!r}")
+    return v
+
+
+#: Allowed values of `second_kernel_route` ("" = no second-kernel claim; Ruling 0b-9).
+SECOND_KERNEL_ROUTES = ("", "comparator", "nanoda-direct")
+
+
+def _second_kernel_route(v) -> str:
+    v = str(v or "").strip()
+    if v not in SECOND_KERNEL_ROUTES:
+        raise SchemaError(
+            f"second_kernel_route must be one of {SECOND_KERNEL_ROUTES!r}, got {v!r}")
     return v
 
 
@@ -536,6 +676,8 @@ def _node_to_doc(node: Node) -> dict:
         doc["judge_via"] = node.judge_via
     if node.heavy_build_targets:
         doc["heavy_build_targets"] = list(node.heavy_build_targets)
+    if node.second_kernel_route:
+        doc["second_kernel_route"] = node.second_kernel_route
     if node.compose is not None:
         c = node.compose
         doc["compose"] = {
@@ -593,6 +735,8 @@ def _node_to_doc(node: Node) -> dict:
             "session": node.grant.session,
             "statement_sha256": node.grant.statement_sha256,
         }
+        if node.grant.checks_required:
+            doc["grant"]["checks_required"] = True
     if node.comparator is not None:
         doc["comparator"] = {
             "artifact_sha256": node.comparator.artifact_sha256,
@@ -619,6 +763,32 @@ def _node_to_doc(node: Node) -> dict:
         }
         if c.run_url:
             doc["ci_record"]["run_url"] = c.run_url
+    if node.rejudge is not None:
+        r = node.rejudge
+        doc["rejudge"] = {k: getattr(r, k) for k in (
+            "date", "machine", "nanoda_rev", "comparator_tag", "artifact_sha256", "verdict",
+            "log_sha256", "peak_rss_kb")}
+        if r.closure_sha256:
+            doc["rejudge"]["closure_sha256"] = r.closure_sha256
+        if r.closure_files:
+            doc["rejudge"]["closure_files"] = r.closure_files
+        if r.route != "comparator":
+            doc["rejudge"]["route"] = r.route
+        if r.note:
+            doc["rejudge"]["note"] = r.note
+    if node.checks is not None:
+        k = node.checks
+        doc["checks"] = {f: getattr(k, f) for f in (
+            "date", "artifact_sha256", "olean_sha256", "probe_verdict", "closure_verdict",
+            "statement_fingerprint")}
+        if k.theorem:
+            doc["checks"]["theorem"] = k.theorem
+        if k.note:
+            doc["checks"]["note"] = k.note
+        if k.axioms is not None:
+            doc["checks"]["axioms"] = list(k.axioms)
+        if k.closure_isolated:
+            doc["checks"]["closure_isolated"] = True
     return doc
 
 
@@ -657,6 +827,7 @@ def _doc_to_node(doc: dict, path: Path) -> Node:
                 date=g["date"],
                 identity=g["identity"],
                 session=g["session"],
+                checks_required=bool(g.get("checks_required", False)),
             )
         comparator = None
         if "comparator" in doc:
@@ -680,6 +851,36 @@ def _doc_to_node(doc: dict, path: Path) -> Node:
                 head_sha=c["head_sha"], artifact_sha256=c["artifact_sha256"],
                 conclusion=c["conclusion"], date=c["date"], run_url=c.get("run_url", ""),
             )
+        rejudge = None
+        if "rejudge" in doc:
+            r = doc["rejudge"]
+            rejudge = RejudgeRecord(
+                date=r["date"], machine=r["machine"], nanoda_rev=r["nanoda_rev"],
+                comparator_tag=r["comparator_tag"], artifact_sha256=r["artifact_sha256"],
+                verdict=r["verdict"], log_sha256=r["log_sha256"],
+                peak_rss_kb=int(r.get("peak_rss_kb", 0)), note=r.get("note", ""),
+                closure_sha256=r.get("closure_sha256", ""),
+                closure_files=int(r.get("closure_files", 0)),
+                route=r.get("route", "comparator"))
+        checks = None
+        if "checks" in doc:
+            k = doc["checks"]
+            # Ruling 12: unlike [rejudge], an unknown key is an error, not silently dropped --
+            # a gate record that half-parses must fail loudly.
+            if not isinstance(k, dict):
+                raise SchemaError(f"[checks] must be a table, not {type(k).__name__}")
+            unknown = sorted(set(k) - _CHECKS_KEYS)
+            if unknown:
+                raise SchemaError(f"[checks] has unknown key(s) {unknown}; "
+                                  f"allowed: {sorted(_CHECKS_KEYS)}")
+            checks = ChecksRecord(
+                date=k["date"], artifact_sha256=k["artifact_sha256"],
+                olean_sha256=k["olean_sha256"], probe_verdict=k["probe_verdict"],
+                closure_verdict=k["closure_verdict"],
+                statement_fingerprint=k["statement_fingerprint"],
+                theorem=k.get("theorem", ""), note=k.get("note", ""),
+                axioms=tuple(k["axioms"]) if isinstance(k.get("axioms"), list) else k.get("axioms"),
+                closure_isolated=k.get("closure_isolated", False))
         compose = None
         if "compose" in doc:
             c = doc["compose"]
@@ -711,10 +912,13 @@ def _doc_to_node(doc: dict, path: Path) -> Node:
             comparator=comparator,
             requires_ci_job=doc.get("requires_ci_job", ""),
             ci_record=ci_record,
+            rejudge=rejudge,
+            checks=checks,
             heavy_certificates=bool(doc.get("heavy_certificates", False)),
             judge_via=_judge_via(doc.get("judge_via", "")),
             compose=compose,
             heavy_build_targets=_heavy_build_targets(doc.get("heavy_build_targets", [])),
+            second_kernel_route=_second_kernel_route(doc.get("second_kernel_route", "")),
             extra={k: v for k, v in doc.items() if k not in _MODELLED_NODE_KEYS} or None,
         )
     except (KeyError, SchemaError) as exc:
@@ -736,15 +940,31 @@ def atomic_write_text(path: Path, text: str) -> None:
     the read-back -- the record that gates `promote_to_open` -- with no error anywhere.
 
     `os.replace` is atomic on POSIX and Windows, so a reader never observes a partial file.
+
+    Final-fix 4: the replacement keeps the replaced file's mode and (best effort) owner, and
+    a NEW file is 0o644. Before, every write left mkstemp's 0o600, so one rewrite by a root
+    session turned a shared node toml into a root-owned, owner-only file.
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        st = os.stat(path)
+    except FileNotFoundError:
+        st = None
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(text)
             fh.flush()
             os.fsync(fh.fileno())
+        if st is None:
+            os.chmod(tmp, 0o644)
+        else:
+            os.chmod(tmp, stat.S_IMODE(st.st_mode))
+            try:
+                os.chown(tmp, st.st_uid, st.st_gid)
+            except PermissionError:
+                pass            # not root and not the owner: keep our own uid/gid
         os.replace(tmp, path)
     except BaseException:
         try:

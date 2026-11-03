@@ -125,7 +125,7 @@ def hunt_minimum(
 
 
 # ---------------------------------------------------------------- GA + QD hunts
-# Evolutionary search, exact-rational: a small
+# The Arda evolution engine's transferable pieces, exact-rational: a small
 # genetic algorithm with the coordinate-descent above as the MEMETIC refiner
 # (population explores basins, descent polishes champions), and a MAP-Elites
 # style quality-diversity archive that returns DIVERSE near-tight points —

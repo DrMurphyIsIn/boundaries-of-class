@@ -20,8 +20,10 @@ the open mathematical record and are Apache-2.0, not BSL.
 
 ## The Telperion engine: Business Source License 1.1
 
-`telperion/` is a vendored copy of the Telperion certificate engine, licensed under the
-[Business Source License 1.1](telperion/LICENSE):
+`telperion/` is a vendored copy of the Telperion certificate engine, taken verbatim from its public repository
+https://github.com/DrMurphyIsIn/telperion at the commit pinned in [`telperion/VENDORED.json`](telperion/VENDORED.json).
+The engine is licensed under the [Business Source License 1.1](telperion/LICENSE); the examples and documentation within it
+are open (Apache-2.0 for code, CC-BY-4.0 for documents), as [`telperion/LICENSING.md`](telperion/LICENSING.md) sets out:
 
 - **Free for research.** Academic research, teaching, scholarly work, peer review and evaluation are
   permitted outright by the Additional Use Grant.
