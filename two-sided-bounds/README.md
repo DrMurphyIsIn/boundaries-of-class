@@ -158,7 +158,10 @@ beforehand.
 - **A separate AI session reproduced the whole run** from its own verified copies, with no differences. This is an AI
   review, not a referee's report, and it used the same machine and toolchain.
 
-**[PENDING: a fresh-clone build and Comparator run of the published entry, by its own instructions.]**
+- **A fresh clone, built by these instructions.** On 3 November 2026 the repository was cloned from GitHub and this
+  entry was built exactly as described below, in an empty directory with its own package store. Comparator then
+  accepted all 28 theorems again under both kernels. It ran on the same machine and with the same checker binaries, so
+  a replay elsewhere would still add something.
 
 ## How to build and check it
 
