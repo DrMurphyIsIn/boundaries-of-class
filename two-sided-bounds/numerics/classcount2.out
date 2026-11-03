@@ -1,0 +1,16 @@
+fundamental discriminants -D, 3 <= D <= 3000000: 911878
+(L') min h / ((1/3) sqrt D / log D) over D >= 2981: 2.370272 at D = 5923 (h = 7); violations 0
+(P') min h / (D^(7/16)/17) over D >= 1000: 2.523654 at D = 111763 (h = 24); violations 0
+(U') max h / ((1/pi) sqrt D (log D + 7/6)) over D >= 5: 0.490081 at D = 311 (h = 19); violations 0
+(U'') max h / ((1/pi) sqrt D (log D/2 + log(log D + 1/3) + 5/3)) over D >= 5: 0.558229 at D = 18191 (h = 213); violations 0
+(U'' loglog) max h / ((1/pi) sqrt D (log D/2 + log log D + 2)) over D >= 5: 0.540006 at D = 18191 (h = 213); violations 0
+violations: (B') 0, (B*) 0, (T) for N in {1,2,3,4,5,10}: 0
+cumulative max D with h <= 1: 163
+cumulative max D with h <= 2: 427
+cumulative max D with h <= 3: 907
+cumulative max D with h <= 4: 1555
+cumulative max D with h <= 5: 2683
+cumulative max D with h <= 10: 13843
+cumulative max D with h <= 20: 58507
+cumulative max D with h <= 50: 462883
+cumulative max D with h <= 100: 2383747

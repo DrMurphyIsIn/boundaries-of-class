@@ -1,0 +1,4 @@
+N=3000 A=4398046511104 A2=8796093022208 P=19 Y=1048576 Q=232792560 nj=69
+leaves=48926294 step1_certified_n=541672746931 leaf_n=924342756771 treated_leaf_n=924342756771
+n_treated=1466015503702 direct_count=1466015503702 match=1
+step2_certified=924342756771 reaching_step3=0 step3_certified=0 leftover=0

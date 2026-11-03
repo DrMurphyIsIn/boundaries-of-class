@@ -35,8 +35,8 @@ could manage.
 | 2. Class number one, determinant route | the same theorem, with no L-function, zeta function or zero-free theorem in the closure | **kernel-checked**; nothing beyond Mathlib | [`determinant/`](determinant/README.md) |
 | 3. Class number at most two | the 27 fields of class number at most two, and the eighteen of class number two | **kernel-checked**, through the 7/8 theorem | [`hcn/`](hcn/README.md) |
 | 4. Tenth-discriminant bounds compared | a survey of the challenge's posted bounds, and the analytic cutoff \|D\| < 548 for class number one | ball arithmetic, reproduced by a second implementation; **not** kernel-checked | [`comparison/`](comparison/README.md) |
-| 5. Two-sided bounds for every field | h ≥ (1/3)·√d/log d for d ≥ 2981 and h ≤ (1/π)·√d·(log d + 7/6), with explicit thresholds (e.g. h ≤ 1000 ⇒ d < 1.605·10⁹; d ≥ 2⁴⁰ ⇒ h ≥ 17450) and the boundary d ≤ D(h) | **kernel-checked** | *in preparation* |
-| 6. Class number at most 3500 | all imaginary quadratic fields with h ≤ 3500, extending Jaswal's h ≤ 3000 | **not** kernel-checked as a whole; see the entry for exactly which parts are | *draft, in preparation* |
+| 5. Two-sided bounds for every field | h ≥ (1/3)·√d/log d for d ≥ 2981 and h ≤ (1/π)·√d·(log d + 7/6), with explicit thresholds (e.g. h ≤ 1000 ⇒ d < 1.605·10⁹; d ≥ 2⁴⁰ ⇒ h ≥ 17450) and the boundary d ≤ D(h) | **kernel-checked** (Lean's kernel and nanoda), through the 7/8 theorem at real points | [`two-sided-bounds/`](two-sided-bounds/README.md), [`paper/`](two-sided-bounds/paper/paper.pdf) |
+| 6. Class number at most 3500 | all imaginary quadratic fields with h ≤ 3500 (50,299,869; largest \|D\| 3,495,584,467), under Kimura's zero bound, extending Jaswal's h ≤ 3000 | **not** kernel-checked as a whole; see the entry for exactly which parts are | [`class-number-3500/`](class-number-3500/README.md), [`paper/`](class-number-3500/paper/paper.pdf) |
 
 Entries 1 to 4 were published while this repository was called **tenth-discriminant** (releases v1.0.0 to v1.4.0,
 concept DOI [10.5281/zenodo.23550257](https://doi.org/10.5281/zenodo.23550257)). The repository was renamed on 2 November

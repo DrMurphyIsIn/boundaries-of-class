@@ -1,0 +1,16 @@
+start Tue Nov  3 06:14:05 EST 2026
+source rsieve_v4.c 1cdb74374f993956188b19532bcf0935
+binary rsieve_v4 69491dc06bf24f9642a0aad1c02d6d7b
+compiler Apple clang version 17.0.0 (clang-1700.6.3.2)
+flags cc -O3 -Wall -o rsieve_v4 rsieve_v4.c -lpthread -lm
+command ./rsieve_v4 3500 4398046511104 8796093022208 19 1048576 8
+exit 0
+N=3500 A=4398046511104 A2=8796093022208 P=19 Y=1048576 Q=232792560 nj=69
+leaves=51659586 step1_certified_n=490033874370 leaf_n=975981629332 treated_leaf_n=975981629332
+n_treated=1466015503702 direct_count=1466015503702 match=1
+step2_certified=975981629327 reaching_step3=5 step3_certified=5 leftover=0
+leftover_lines 0
+     2001.55 real     15991.62 user         8.40 sys
+            12353536  maximum resident set size
+out_md5 92093bd605084ca7b71142b09f749acc
+end Tue Nov  3 06:47:26 EST 2026

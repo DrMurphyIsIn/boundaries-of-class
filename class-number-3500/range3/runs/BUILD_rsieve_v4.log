@@ -1,0 +1,8 @@
+build Sun Oct 25 18:06:34 EDT 2026
+source rsieve_v4.c 1cdb74374f993956188b19532bcf0935
+compiler Apple clang version 17.0.0 (clang-1700.6.3.2)
+command cc -O3 -Wall -o rsieve_v4_rebuild rsieve_v4.c -lpthread -lm
+rebuild md5 337184096aaf2474eaa137cb34a542b2
+pinned binary rsieve_v4 69491dc06bf24f9642a0aad1c02d6d7b
+note: the rebuild under another name differs only through the name-dependent ad-hoc code signature;
+reproduction under the SAME name (scratch dir, twice): md5 69491dc06bf24f9642a0aad1c02d6d7b = pinned, cmp 0 bytes differ

@@ -1,0 +1,13 @@
+PASS the four ranges are consecutive half-open integer intervals from 3
+PASS log(1606926912624720) < 35.0131  (log in [35.013099999999994, 35.013099999999994])
+PASS log(1606926912624721) >= 35.0131  (log in [35.013099999999994, 35.013099999999994])
+PASS the eleven Table-3 intervals tile range (3) exactly
+PASS every Y = floor(sqrt(floor(A/4))), so 4Y^2 <= A
+PASS Jaswal's per-interval n treated sum to his total 535,275,800,332,314
+PASS exactly one run per interval: the 11 logs 'p35_' are the eleven intervals (A, A2, P, Y)
+PASS every run has N = 3500 (the expected value)
+PASS every run has n_treated == direct_count (match=1)
+PASS every run's n_treated equals Jaswal's Table 3 value (C2)
+PASS every run's leftover count equals its LEFTOVER lines
+PASS no unsettled leftover (C1/K3): 0 unsettled, 0 in total
+COVER CHECK PASS
