@@ -92,6 +92,5 @@ b19333fe497132aad0574250218b88d7  range3/runs/p35_07.out
 48bfecde08ef034285bdac27be7824ec  range3/runs/p35_10.out
 f8ad2177425df00cf53ca100423b8e30  range4/certify_p27.out
 e28b3d1365ce330b100d119e068d7da3  range4/certify_p27.py
-fd72c8a37c41675006acca12e7746c3a  README.md
 da73d82f03b3785014c1ab2deb409b46  remark2/b_h78_6000.out
 4b32fb33382906ce524762b852e4f6f6  remark2/b_h78.py
