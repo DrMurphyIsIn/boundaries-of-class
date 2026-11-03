@@ -1,18 +1,21 @@
 cff-version: 1.2.0
 message: "If you use this work, please cite it as below."
-title: "Kernel-checked Lean 4 proofs of the class number one theorem (two routes) and of the class number two list, without Heegner's method, and a verified comparison of tenth-discriminant bounds"
+title: "The Boundaries of Class: imaginary quadratic class numbers from class number one to 3500, kernel-checked where possible"
 authors:
   - family-names: Murphy
     given-names: Peter W.
-repository-code: "https://github.com/DrMurphyIsIn/tenth-discriminant"
+repository-code: "https://github.com/DrMurphyIsIn/boundaries-of-class"
 license:
   - Apache-2.0
   - CC-BY-4.0
   - BUSL-1.1
-version: v1.4.0
-date-released: 2026-10-27
-doi: "10.5281/zenodo.23690870"
+version: v2.0.0
+date-released: 2026-11-03
+doi: "10.5281/zenodo.23924566"
 identifiers:
+  - type: doi
+    value: "10.5281/zenodo.23924566"
+    description: "Zenodo archive of release v2.0.0 (renamed The Boundaries of Class; entries 5 and 6 added)"
   - type: doi
     value: "10.5281/zenodo.23690870"
     description: "Zenodo archive of release v1.4.0 (the fourth entry's cutoff q < 548)"
@@ -49,6 +52,10 @@ keywords:
   - Rosser-Schoenfeld
   - ball arithmetic
 abstract: >-
+  Version 2.0.0 renames the repository (formerly tenth-discriminant) and adds entry 5, explicit two-sided class-number bounds
+  for every imaginary quadratic field, kernel-checked (28 Lean statements, nanoda and Lean's kernel), and entry 6, the
+  classification of the imaginary quadratic fields of class number at most 3500 under Kimura's explicit zero bound (50,299,869
+  fields; largest |D| 3,495,584,467), which is not kernel-checked as a whole. Entries 1 to 4 are unchanged:
   Two Lean 4 proofs of the class number one theorem for imaginary quadratic fields, each accepted by two independent kernels
   (Lean's and nanoda) through Comparator in local, unsandboxed runs: for squarefree m >= 1, the field Q(sqrt(-m)) has class
   number one if and only if m is in {1, 2, 3, 7, 11, 19, 43, 67, 163}. Neither uses Heegner, Baker, Stark or Gross-Zagier input,
@@ -110,3 +117,19 @@ references:
     year: 2026
     doi: "10.5281/zenodo.23690870"
     notes: "The paper of the fourth entry, comparison/paper/paper.pdf (new in v1.3.0; cutoff q < 548 since v1.4.0). Not kernel-checked."
+  - type: generic
+    title: "Explicit two-sided bounds for imaginary quadratic class numbers, kernel-checked: the 7/8 quasi-Riemann hypothesis at real points, in Lean 4"
+    authors:
+      - family-names: Murphy
+        given-names: Peter W.
+    year: 2026
+    doi: "10.5281/zenodo.23924566"
+    notes: "The paper of the fifth entry, two-sided-bounds/paper/paper.pdf (new in v2.0.0)."
+  - type: generic
+    title: "Imaginary quadratic fields of class number at most 3500: an independent extension, toward kernel verification"
+    authors:
+      - family-names: Murphy
+        given-names: Peter W.
+    year: 2026
+    doi: "10.5281/zenodo.23924566"
+    notes: "The paper of the sixth entry, class-number-3500/paper/paper.pdf (new in v2.0.0). Not kernel-checked as a whole."

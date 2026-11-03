@@ -1,0 +1,278 @@
+\documentclass[11pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage{enumitem}
+\usepackage[font=small,labelfont=bf]{caption}
+\usepackage{xcolor}
+\usepackage[obeyspaces,spaces]{url}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=black, citecolor=black, urlcolor=blue}
+\usepackage[capitalise,noabbrev]{cleveref}
+\setlength{\emergencystretch}{2.5em}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{remark}[theorem]{Remark}
+
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\Q}{\mathbb{Q}}
+% Facts not yet available (the DOI).
+\newcommand{\pending}[1]{\textcolor{red}{#1}}
+
+\title{Imaginary quadratic fields of class number at most 3500:\\ an independent extension, toward kernel verification}
+\author{Peter W. Murphy}
+\date{November 2026 (v2.0.0)\\[2pt] \small Repository \url{https://github.com/DrMurphyIsIn/boundaries-of-class}, directory \texttt{class-number-3500/}\\ \small DOI \url{https://doi.org/10.5281/zenodo.23924566} (v2.0.0)\\ \small (all versions: \url{https://doi.org/10.5281/zenodo.23550257})}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Assume the explicit bound for real zeros of Dirichlet $L$-functions in the second part of Theorem~1 of Kimura's preprint
+\cite{Kimura2026}, which its author reports as checked in Lean by two independent kernels and which is not
+refereed. Then exactly $50\,299\,869$
+imaginary quadratic fields have class number at most $3500$, and the largest absolute discriminant among them is
+$3\,495\,584\,467$, of class number $3477$. This extends Jaswal's classification of the fields with $h \le 3000$
+\cite{Jaswal2026} by his own method and on the same footing, and it reproduces his list and Kimura's list for
+$h \le 2000$ exactly. Every computational step of the ranges not covered by a cited result was re-implemented independently,
+sharing no code with Kimura's or Jaswal's programs, and each was cross-checked against a second program or against the
+published data. The same conclusion follows without the sieve from the real case of OpenAI's zero-free half-plane
+$\operatorname{Re} s > 7/8$, whose Lean proof we have replayed with two kernels (its manuscript is not refereed); on
+that route the analytic bound for large discriminants is kernel-checked in a companion paper. We release the
+programs, the logs and the full list, together with a precise account of which steps are kernel-checked and which are not. The aim is to give the
+community a basis from which this classification can be carried to a fully kernel-checked one.
+\end{abstract}
+
+\section{Introduction}
+
+In October 2026 several arguments excluding Landau--Siegel zeros appeared, beginning with one released by OpenAI
+\cite{OpenAISZ}; Terence Tao sketched the proof \cite{TaoSketch}. He then posed a challenge \cite{TaoChallenge}: for each
+of these arguments, to use an AI tool to work out an effective upper bound for a hypothetical tenth imaginary quadratic
+discriminant of class number one, without Heegner's methods, as a way of exploring the new arguments. Any amount of AI use
+was permitted provided it was disclosed, and Tao asked contributors not to prioritise speed over quality: ``this is not
+intended to be a race regarding who is `first' to claim any given bound.'' He also noted that a low enough threshold could
+give a new solution of the class number one problem, possibly one formalizable in Lean.
+
+The present paper does not answer that challenge directly. It belongs to a line of work that grew out of the same
+explicit Siegel-zero bounds: once the zero bound is explicit, it bounds the discriminants of fields with any given class
+number, and classifications far beyond the previously known range become a finite computation. We have tried to write it
+in the spirit Tao asked for, with full attribution, a disclosed account of the AI's role, and an exact statement of what
+has and has not been machine-checked.
+
+It is the sixth entry of a repository, \emph{The Boundaries of Class}, that collects our work on this question. The first
+three entries are kernel-checked proofs of the class number one theorem, by two routes \cite{MurphyFirst,MurphyCN1}, and
+of the list of fields of class number two \cite{MurphyHCN}; the fourth is a survey of the bounds posted in the challenge
+\cite{MurphyComparison}; the fifth proves explicit two-sided bounds for the class number of every imaginary quadratic
+field, kernel-checked \cite{MurphyBounds}. In those entries the kernel checks the whole proof. Here it cannot, and much of
+this paper is about saying exactly where the result stands.
+
+Two recent preprints set the frontier. Kimura \cite{Kimura2026} made explicit, and checked in Lean with two independent kernels
+according to his account, the argument of \cite{OpenAISZ}, using its Lean formalization \cite{OpenAIRepo}. He then determined, unconditionally, all
+imaginary quadratic fields with $h \le 2000$: there are $16\,453\,493$, the largest $|D|$ being $1\,062\,350\,083$.
+Jaswal \cite{Jaswal2026} assumed the same zero bound, which we call \emph{(K)} below, and extended the classification to
+$h \le 3000$: there are $36\,993\,853$, the largest $|D|$ being $2\,562\,211\,723$. Both rest on Watkins's sieve
+\cite{Watkins2004} and on the unconditional tabulation of Mosunov and Jacobson \cite{MJ16}. Earlier, on 8 October, the repository zeta-lab
+had posted the fields with $h \le 1500$ under the full $7/8$ half-plane \cite{ZetaLab2026}; Jaswal's lists agree with it.
+
+We extend Jaswal's classification to $h \le 3500$. The method is his; the footing is Kimura's (K); the tabulation is
+Mosunov and Jacobson's. What we add is threefold:
+\begin{itemize}[nosep]
+\item an \emph{independent implementation} of every computational step of ranges (1), (3) and (4) below, sharing no
+code with Kimura's or Jaswal's (range~(2) and the footing (K) are cited, not re-derived);
+\item a \emph{cross-check of every step} against a second program or against the published data, including an
+exact reproduction of both earlier lists and of Jaswal's sieve counts; and
+\item a \emph{statement of status}, step by step, of what is kernel-checked, what is certified by interval arithmetic, and what
+rests on agreement between programs, offered as a map for a fully kernel-checked version.
+\end{itemize}
+
+\begin{theorem}\label{thm:main}
+Assume (K): for every primitive real Dirichlet character $\chi$ of conductor $q \ge 3$ and every real zero $\beta$ of
+$L(s,\chi)$, if $\log q \ge 350131/10000$ then $(1-\beta)\log q \ge 1193/200000$ \cite[Theorem~1]{Kimura2026}. Then
+exactly $50\,299\,869$ imaginary quadratic fields have class number at most $3500$. The largest absolute
+discriminant among them is $3\,495\,584\,467$, with class number $3477$.
+\end{theorem}
+
+The sub-lists for $h \le 3000$ and $h \le 2000$ coincide exactly with Jaswal's and with Kimura's (\cref{sec:checks}).
+Under (K) the three numbers rest on all four ranges: range~(1) computes them, and range~(3), at bound $3500$
+(\cref{sec:range3}), leaves no discriminant unsettled. Under the hypothesis (H) of Remark~\ref{rem:H} they do not depend
+on range~(3).
+
+\section{The cover}\label{sec:cover}
+
+Write $n = |D|$ for a fundamental discriminant $D < 0$. Following Jaswal \cite[\S2--3]{Jaswal2026}, the theorem is proved
+by covering $n \ge 3$ with four ranges, each closed by a different argument (\cref{tab:cover}).
+
+\begin{table}[h]
+\centering\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+range & $n = |D|$ & argument \\
+\midrule
+(1) & $3 \le n < 19\,800\,000\,000$ & direct computation of every $h(D)$ (two independent programs)\\
+(2) & $19\,800\,000\,000 \le n < 2^{40}$ & Mosunov--Jacobson \cite{MJ16}: $\min L(1,\chi) \approx 0.17070$, so $h > 7640$\\
+(3) & $2^{40} \le n \le 1\,606\,926\,912\,624\,720$ & a Watkins sieve at bound $N = 3500$ (Jaswal's procedure)\\
+(4) & $n \ge 1\,606\,926\,912\,624\,721$ & (K) and Hecke's integral representation: $h \ge 3562$\\
+\bottomrule
+\end{tabular}
+\caption{The four ranges. The boundary between (3) and (4) is $\lfloor e^{35.0131}\rfloor$, checked in interval
+arithmetic.}\label{tab:cover}
+\end{table}
+
+\paragraph{Range (4).} This is Jaswal's Proposition~2.7 \cite{Jaswal2026}: from (K) and Hecke's representation of the
+Dedekind zeta function, $h(D) \ge 3562$ whenever $\log|D| \ge 35.0131$. We re-derived the argument line by line (theta
+inversion, the representation count, the Mellin split) and re-certified the numerical constant in interval arithmetic;
+our enclosure, $g(e^{35.0131}) \in [3561.29778, 3561.29779]$, lies inside Jaswal's printed enclosure
+$[3561.2977, 3561.2978]$.
+
+\paragraph{Range (2).} Mosunov and Jacobson tabulated the class groups of all negative discriminants with $|D| < 2^{40}$
+unconditionally \cite{MJ16}. They record the minimum of $L(1,\chi)$ over their whole tabulation, about $0.17070$; it is attained
+at $D = -107\,415\,709\,003$, which lies in range~(2). By the class number formula it gives $h > 7640$ for
+$19\,800\,000\,000 \le |D| < 2^{40}$. We cite this, as Kimura and Jaswal do, after reading it at source.
+
+\paragraph{Range (1).} For every fundamental $D$ with $|D| < 19\,800\,000\,000$ we decide whether $h(D) \le 3500$, and if so
+compute $h(D)$ exactly. The first program uses Jaswal's procedure \cite[\S3.1]{Jaswal2026}: a class-order test
+(baby-step giant-step on the classes of small split primes, with the genus-theory refinement) certifies $h > 3500$ for most
+$D$, and the reduced-form count gives $h(D)$ exactly for the rest. The second program is PARI/GP's \texttt{qfbclassno}
+\cite{PARI}, whose manual states that its results are unconditionally correct for $|D| < 2\cdot10^{10}$.
+
+\paragraph{Range (3).}\label{sec:range3} We sieve every $n$ in the range with $n \bmod 16 \in \{3,7,11,15,4,8\}$ and
+$9 \nmid n$ (a superset of the fundamental ones) through Jaswal's three steps \cite[\S3.2]{Jaswal2026}, in his eleven
+intervals with his parameters: (i) a class-level bound by residues modulo a primorial-type modulus, (ii) a per-$n$ bound
+from split primes just above the sieving range, and (iii) a partial reduced-form count. Our implementation enumerates the
+residue classes of step~(i) by a depth-first search that certifies whole subtrees by a lower bound, and so avoids
+enumerating most classes. In every interval the number of $n$ treated must equal an independent direct count, and no $n$
+may be left over. In all eleven intervals both conditions hold. Step~(iii) was reached by $920\,101$ values of $n$ in
+$[2^{40}, 2^{41})$, by $12\,528$ in $[2^{41}, 2^{42})$ and by $5$ in $[2^{42}, 2^{43})$, and by none above, and it settled
+every one of them.
+
+\begin{remark}[A shorter route under the 7/8 hypothesis]\label{rem:H}
+Let (H) be the statement that $L(\sigma,\chi) \ne 0$ for $7/8 < \sigma < 1$ and every real primitive Dirichlet
+character $\chi$. It is the real case of the half-plane discussed in \cref{sec:kernel}, and it implies (K). Under (H),
+ranges (3) and (4) are not needed, as Jaswal observes \cite[Remark~4.2]{Jaswal2026}. By his Corollary~2.3 and the
+monotonicity in his Proposition~2.2, $h(D) \ge B(2^{40}, 7/8)$ for every fundamental discriminant with $|D| \ge 2^{40}$,
+where
+\[
+  B(x,\beta) = 2\beta(1-\beta)\sum_{m\ge1}\Bigl(\alpha_m^{-\beta}\,\Gamma(\beta,\alpha_m)
+  + \alpha_m^{\beta-1}\,\Gamma(1-\beta,\alpha_m)\Bigr), \qquad \alpha_m = 2\pi m^2/\sqrt{x}.
+\]
+Every term is positive, so a partial sum is a lower bound. We evaluated the first $6000$ terms in interval arithmetic
+and bounded the tail, obtaining $B(2^{40}, 7/8) = 17\,357.92029\ldots$, in agreement with Jaswal's value and far above
+$3500$. So, under (H), the theorem follows from range~(1), range~(2), the analytic step $h(D) \ge B(|D|,\beta)$ (Jaswal's
+Proposition~2.2, from Hecke's integral representation, with his Corollary~2.3) and this one constant. Indeed, as Jaswal
+notes, under (H) the tabulation of Mosunov and Jacobson alone determines every field with $h < B(2^{40},7/8)$, so that
+range~(1) becomes our independent computation of the same list below $19\,800\,000\,000$. On this route the numbers in the
+theorem do not depend on range~(3) at all, and the footing is a statement whose Lean proof we have kernel-checked
+ourselves. It is the natural route toward a fully kernel-checked version, and its analytic half is already kernel-checked by a
+different route: the fifth entry \cite{MurphyBounds} proves in Lean, from the same $7/8$ theorem and checked by two
+kernels, that $h(D) \ge 17\,450$ for every imaginary quadratic field with $|D| \ge 2^{40}$. Jaswal's Proposition~2.2,
+which we re-derived by hand, is then not needed on this route. What would remain to formalize is range~(1) and the
+tabulation of range~(2).
+\end{remark}
+
+\section{Checks}\label{sec:checks}
+
+\begin{enumerate}[leftmargin=*]
+\item \emph{Range (1), two programs.} The two programs' lists of $(n, h)$ with $h \le 3500$ are byte-identical after
+normalisation: $50\,299\,869$ lines. Both tile $[3, 19\,800\,000\,000)$ in $1980$ segments with no gaps. The count of
+fundamental discriminants treated, $6\,018\,478\,352$, equals Jaswal's.
+\item \emph{Reproduction of the earlier lists.} Our sub-list for $h \le 3000$ has the same SHA-256 digest as Jaswal's
+published list ($36\,993\,853$ fields, largest $2\,562\,211\,723$), and our sub-list for $h \le 2000$ has the same digest as
+Kimura's ($16\,453\,493$ fields, largest $1\,062\,350\,083$). Every per-$h$ count agrees.
+\item \emph{Range (3), reproduction at $N = 3000$.} Before running at $3500$, we ran our sieve at Jaswal's bound $3000$ over
+all eleven intervals. In every interval the number of $n$ treated and the number reaching step~(iii) equal Jaswal's
+published values, and the totals equal his $535\,275\,800\,332\,314$. Repeated runs of two of the intervals gave byte-identical output.
+\item \emph{Range (3), coverage at $N = 3500$.} A separate checker verifies that the intervals are consecutive integer ranges,
+that they meet the exact (3)/(4) boundary, that each was run once at $N = 3500$, that $n$ treated equals the direct count,
+and that no $n$ is left unsettled. The check passes.
+\item \emph{Separate review.} The written plan, which fixed every check above and the outcomes that would stop the work
+in advance, the statements implemented, and each completed range were reviewed by a separate AI session (same model family, same operator; not a human
+referee), which re-ran the cover check itself and obtained a byte-identical result. It also re-ran the first interval
+of range~(3) at $N = 3500$ from a copy of the pinned program, and its output was byte-identical to the run of record.
+\end{enumerate}
+
+\section{Toward a kernel-checked classification}\label{sec:kernel}
+
+The result above is \emph{not} kernel-checked as a whole, and we want to be precise about where it stands.
+\begin{itemize}[nosep]
+\item \textbf{(K)} is Lean-checked, with two independent kernels, according to Kimura \cite{Kimura2026}; we have
+not replayed his formalization. But (K) also follows, as Jaswal notes \cite{Jaswal2026}, from the zero-free half-plane
+$\operatorname{Re} s > 7/8$ for Dirichlet $L$-functions announced by OpenAI \cite{OpenAIQRH}: a real zero then has
+$\beta \le 7/8$, so $(1-\beta)\log q \ge (\log q)/8 > 4$ when $\log q \ge 35.0131$. That half-plane we have checked
+ourselves. OpenAI's Lean proof of it, the theorem
+\path{OAI.DirichletCharacter.LFunction_ne_zero_of_seven_eighths_lt_re}, was replayed from openai/math at commit \texttt{adc7f124} through Comparator (run unsandboxed) and accepted by
+Lean's kernel and by nanoda on 7 October 2026. It also lies inside a later export that five checkers accepted
+(leanchecker, leanchecker-paranoid, nanoda, con-leche and con-ron; again not sandboxed, and lean4lean could not be used)
+\cite{MurphyLchi}. A kernel check certifies the formal proof, not the manuscript: the manuscript is unrefereed, and the
+match between the formal statement and the mathematical one was checked by reading it. (K) likewise follows from
+Cureton and Thorner's half-plane $\operatorname{Re} s > 31/32$ for Dedekind zeta functions
+\cite{CuretonThorner2026}, also announced with a Lean formalization, which we have not built.
+\item \textbf{Range (4)} is a short analytic argument plus one numerical constant, which we certified in interval
+arithmetic. It is a natural first target for formalization; Kimura's analogous Theorem~10 is already Lean-checked
+according to his account.
+\item \textbf{Range (2)} rests on a published, unconditional, but large tabulation \cite{MJ16}.
+\item \textbf{Range (1)} rests on agreement between two independent programs (our own and PARI/GP), and with the
+published lists, not on a kernel.
+\item \textbf{Range (3)} at $N = 3500$ was run by our sieve alone. The evidence for it is that the same code reproduces
+Jaswal's counts at $N = 3000$ exactly, interval by interval, together with the coverage checks at $N = 3500$; it is not
+kernel-checked. Under (H) of Remark~\ref{rem:H} it is not needed.
+\end{itemize}
+Small class numbers can be kernel-checked today: in earlier work we gave kernel-checked proofs that the imaginary
+quadratic fields of class number one are exactly the nine known ones, by two routes \cite{MurphyFirst,MurphyCN1}, and likewise
+for class number at most two \cite{MurphyHCN}; the fifth entry kernel-checks explicit bounds for every field \cite{MurphyBounds}. Scaling that to $h \le 3500$ is a
+different matter. A direct kernel replay of the range-(3) sieve with current tools would, by our measurements, take of the
+order of hundreds of days on a single workstation, so we have not attempted it. We release the inputs, programs and logs
+in a form intended to make such an effort, by us or by others, as straightforward as possible, and we would be glad to
+collaborate on it.
+
+\section{What we do and do not claim}\label{sec:claims}
+
+We claim the classification of \cref{thm:main} under (K), with the checks of \cref{sec:checks}, and the same list under
+(H) by the route of Remark~\ref{rem:H}. We do not claim the method: it is Jaswal's, on Kimura's footing and Watkins's
+sieve, with Mosunov and Jacobson's tabulation, and we have followed it closely. We do not claim that the result is
+kernel-checked, and we have said in \cref{sec:kernel} which parts are and which are not. The bound $3500$ was our
+choice, set by the computing budget for range~(3). This paper says nothing about real quadratic fields, about orders that
+are not maximal, or about the Riemann hypothesis.
+
+Finally, this paper describes the computation and its checks. Where it states a count or a digest, the released files are
+the authority.
+
+\subsection*{The author's check}
+The author read back the paper and the record of checks on 2 November 2026, and approved them. At that date the figures that depend
+on range~(3) were still to be confirmed; the cover check, and the separate review of it, confirmed them on 3 November
+2026.
+
+\section*{Data and code}
+The list of all $50\,299\,869$ fields with $h \le 3500$, the programs for ranges (1), (3) and (4), the run logs with
+checksums, and the cover checker are in the directory \texttt{class-number-3500/} of the repository \url{https://github.com/DrMurphyIsIn/boundaries-of-class}; the full list is deposited with the release, DOI \url{https://doi.org/10.5281/zenodo.23924566}.
+
+\section*{Acknowledgments and AI disclosure}
+The challenge is Terence Tao's \cite{TaoChallenge}. The footing (K) and the reduction to a finite search are Iwao
+Kimura's \cite{Kimura2026}, building on the argument released by OpenAI \cite{OpenAISZ} and its Lean formalization \cite{OpenAIRepo}; Banks
+\cite{Banks2026}, Kerr \cite{Kerr2026} and Green \cite{Green2026} have given independent proofs of the Siegel-zero bound. The method, its parameters and the
+classification up to $3000$ that we extend are Manvir Jaswal's \cite{Jaswal2026}; we followed his paper and his published
+data closely and checked our work against them throughout. The sieve goes back to Watkins \cite{Watkins2004}, and range~(2)
+is the tabulation of Mosunov and Jacobson \cite{MJ16}. We thank the PARI/GP developers.
+
+The authors we build on state their own use of AI, which we record as they give it. Kimura states that the explicit
+argument, the Lean files, the sieve program and most of the text were done with Claude Opus 5.5 (Anthropic) through
+Claude Code, under his direction \cite[\S8]{Kimura2026}. Jaswal writes that his paper ``was produced by a multi-agent AI
+research system that the author built and ran, using Anthropic Claude Opus 5.5: apart from the work of others that it
+cites, the ideas, proofs, computations and text are due to the system'' \cite{Jaswal2026}.
+
+The programs, the checks and this paper were produced with extensive use of an AI assistant (Claude, Anthropic) under the
+direction of the author. A separate AI session, of the same model family and under the same operator, reviewed the plan,
+the statements, each completed range and this paper, and re-ran the cover check with its own copy. That
+review is not a substitute for a human referee. The mathematical route is due to the people credited above.
+The account of status, the attributions and the account of how the work was checked are ours, and we have tried to say
+how each was obtained.
+
+\bibliographystyle{amsplain}
+\bibliography{refs}
+
+\end{document}

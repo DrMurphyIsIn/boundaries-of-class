@@ -1,0 +1,19 @@
+thresholds for 6561 patterns done; frontier nodes=1614 (depth 4)
+     2001.55 real     15991.62 user         8.40 sys
+            12353536  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                 972  page reclaims
+                   1  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+              270344  involuntary context switches
+     169674091755283  instructions retired
+      57779543263096  cycles elapsed
+            12009880  peak memory footprint
