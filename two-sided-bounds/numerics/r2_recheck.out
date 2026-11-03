@@ -1,0 +1,16 @@
+== 1. K_{1/2} kernel bound vs quadrature: I(sigma;A,B) = int t^(nu-1) e^(-At-B/t) dt
+max I/bound over the test grid: 0.9996034862 (must be <= 1)
+== 2. min_a g(a) vs the closed form
+d = 2203 closed-form min = -0.714893025605  grid min (a in [1, 1e12]) = -0.714892969567
+d = 1099511627776 closed-form min = -0.000101384076404  grid min (a in [1, 1e12]) = -0.000101384072956
+== 3. H(d, sigma) = 1 + P/m at the certified points
+h<=2 d = 2203 sigma = 0.87501 H = 2.0000546502442 > 2: True
+h<=10 d = 54410 sigma = 0.87501 H = 10.000551037892 > 10: True
+h<=100 d = 8607000 sigma = 0.87501 H = 100.00271908334 > 100: True
+h<=1000 d = 1603000000 sigma = 0.87501 H = 1000.1712581008 > 1000: True
+h<=2000 d = 7788000000 sigma = 0.87721 H = 2000.072538686 > 2000: True
+d>=2^40 d = 1099511627776 sigma = 0.90736 H = 18292.461148085 
+d>=2^40 at 7/8+1e-6 d = 1099511627776 sigma = 0.875001 H = 17463.565257269 
+== 4. H log d / sqrt d with sigma = 1 - min(1/8, 2/L)
+min over L in [8, 208] = 0.34489889 at L = 8.0 ; at L = 8: 0.34489889 ; max = 0.544431 at L = 16.0
+limit 2 zeta(2)/(pi e) = 0.38524245

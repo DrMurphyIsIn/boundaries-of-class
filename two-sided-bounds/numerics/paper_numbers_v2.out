@@ -1,0 +1,76 @@
+== 1. (L'): H(d, sigma) log d / sqrt d, sigma = 7/8 for log d <= 16 and 1 - 2/log d beyond
+  L = 8.0  value = 0.344899
+  L = 9.0  value = 0.395193
+  L = 10.0  value = 0.4369
+  L = 12.0  value = 0.496447
+  L = 14.0  value = 0.529934
+  L = 16.0  value = 0.544431
+  L = 20.0  value = 0.510367
+  L = 30.0  value = 0.463035
+  L = 50.0  value = 0.42912
+  L = 100.0  value = 0.406231
+  L = 1000.0  value = 0.387262
+  relative margin of 1/3 at L = 8: 0.0347
+  limit 2 zeta(2)/(pi e) = 0.385242 ; v1 chain limit 13/(8 pi e) = 0.190287
+== 2. (P'): H(d, 7/8)/d^(7/16) and its reciprocal
+  d = 1000  H/d^(7/16) = 0.0625704  = 1/ 15.982
+  d = 3166  H/d^(7/16) = 0.0714865  = 1/ 13.9887
+  d = 39001  H/d^(7/16) = 0.0837003  = 1/ 11.9474
+  d = 1000000  H/d^(7/16) = 0.0905842  = 1/ 11.0394
+  d = 1000000000  H/d^(7/16) = 0.093903  = 1/ 10.6493
+  d = 1099511627776  H/d^(7/16) = 0.0942121  = 1/ 10.6143
+  d = 100000000000000000000  H/d^(7/16) = 0.0942394  = 1/ 10.6113
+  d = 10000000000000000000000000000000000000000  H/d^(7/16) = 0.0942395  = 1/ 10.6113
+  (P') beats d^(3/8)/12 for d >= (17/12)^16 = 263.198
+== 3. the thresholds: kernel-checked X_N against H at sigma = 7/8
+  N = 1  X_N = 660  H(X_N, 7/8) = 1.005527854  > N: True
+  N = 2  X_N = 2210  H(X_N, 7/8) = 2.003630024  > N: True
+  N = 3  X_N = 4740  H(X_N, 7/8) = 3.003942568  > N: True
+  N = 4  X_N = 8310  H(X_N, 7/8) = 4.003328104  > N: True
+  N = 5  X_N = 13000  H(X_N, 7/8) = 5.006775209  > N: True
+  N = 10  X_N = 54500  H(X_N, 7/8) = 10.00889067  > N: True
+  N = 100  X_N = 8620000  H(X_N, 7/8) = 100.0728689  > N: True
+  N = 1000  X_N = 1605000000  H(X_N, 7/8) = 1000.724802  > N: True
+  N = 2000  X_N = 7800000000  H(X_N, 7/8) = 2001.133746  > N: True
+  N = 5000  X_N = 63200000000  H(X_N, 7/8) = 5002.56989  > N: True
+  point d >= 2000000000 : H(X, 7/8) = 1102.094067  > N - 1 = 1100 : True
+  point d >= 19800000000 : H(X, 7/8) = 3009.45447  > N - 1 = 3006 : True
+  point d >= 1099511627776 : H(X, 7/8) = 17463.52015  > N - 1 = 17449 : True
+== 4. the boundary
+  h = 1  D'(h) = 2981.0  power = 1000.0  (B*) = 1000.0  v1 D(h) = 2981.0  cumulative truth = 163  (B*)/truth = 6.135  D'/truth = 18.29
+  h = 2  D'(h) = 2981.0  power = 3166.09  (B*) = 2981.0  v1 D(h) = 11982.9  cumulative truth = 427  (B*)/truth = 6.981  D'/truth = 6.981
+  h = 3  D'(h) = 6990.34  power = 7998.67  (B*) = 6990.34  v1 D(h) = 33055.4  cumulative truth = 907  (B*)/truth = 7.707  D'/truth = 7.707
+  h = 4  D'(h) = 14558.7  power = 15438.0  (B*) = 14558.7  v1 D(h) = 66928.5  cumulative truth = 1555  (B*)/truth = 9.362  D'/truth = 9.362
+  h = 5  D'(h) = 25457.5  power = 25709.9  (B*) = 25457.5  v1 D(h) = 114889.0  cumulative truth = 2683  (B*)/truth = 9.488  D'/truth = 9.488
+  h = 10  D'(h) = 138255.0  power = 125363.0  (B*) = 125363.0  v1 D(h) = 596924.0  cumulative truth = 13843  (B*)/truth = 9.056  D'/truth = 9.987
+  h = 20  D'(h) = 715035.0  power = 611276.0  (B*) = 611276.0  v1 D(h) = 2.99206e+6  cumulative truth = 58507  (B*)/truth = 10.45  D'/truth = 12.22
+  h = 50  D'(h) = 5.96052e+6  power = 4.9638e+6  (B*) = 4.9638e+6  v1 D(h) = 2.42109e+7  cumulative truth = 462883  (B*)/truth = 10.72  D'/truth = 12.88
+  h = 100  D'(h) = 2.88105e+7  power = 2.42038e+7  (B*) = 2.42038e+7  v1 D(h) = 1.15062e+8  cumulative truth = 2383747  (B*)/truth = 10.15  D'/truth = 12.09
+  h = 1000  D'(h) = 4.80742e+9  power = 4.67302e+9  (B*) = 4.67302e+9  v1 D(h) = 1.84977e+10  cumulative truth = 227932027  (B*)/truth = 20.5  D'/truth = 21.09
+  h = 2000  D'(h) = 2.1877e+10  power = 2.27859e+10  (B*) = 2.1877e+10  v1 D(h) = 8.3527e+10  cumulative truth = 1062350083  (B*)/truth = 20.59  D'/truth = 20.59
+  h = 5000  D'(h) = 1.60043e+11  power = 1.8503e+11  (B*) = 1.60043e+11  v1 D(h) = 6.05747e+11
+  the power form is the smaller up to h = 1 ; from h = 2 on D'(h) is
+  (B*)/cumulative truth over h <= 100: min 6.135 at h = 1 ; max 13.24 at h = 93
+  D'/cumulative truth over h <= 100: min 6.981 at h = 2 ; max 18.29 at h = 1
+  v1 D(h)/cumulative truth over h <= 100: min 18.29 at h = 1 ; max 63.17 at h = 93
+== 5. comparisons
+  N = 2  LemmaLab posted / ours = 1.884
+  N = 10  LemmaLab posted / ours = 5.156
+  N = 100  LemmaLab posted / ours = 7.703
+  N = 1000  LemmaLab posted / ours = 7.352
+  N = 2000  LemmaLab posted / ours = 6.949
+  N = 5000  LemmaLab posted / ours = 6.361
+  N = 1  ours / cumulative truth = 4.049
+  N = 2  ours / cumulative truth = 5.176
+  N = 3  ours / cumulative truth = 5.226
+  N = 4  ours / cumulative truth = 5.344
+  N = 5  ours / cumulative truth = 4.845
+  N = 10  ours / cumulative truth = 3.937
+  N = 100  ours / cumulative truth = 3.616
+  N = 1000  ours / cumulative truth = 7.042
+  N = 2000  ours / cumulative truth = 7.342
+  (L') at d = 2^40: 12606.462 ; (P') at 2^40: 10903.753
+  Jaswal Thm 1.3 constant 1/5 vs 1/3; (U') constant at d = 2981: (log d + 7/6)/(pi log d) = 0.36473
+  asymptotic (U') 1/pi = 0.31831 ; (U'') 1/(2 pi) = 0.159155 ; v1 (U) 6/5
+  Kimura Remark 11: e^27.2 = 6.498e+11 ; e^35.4 = 2.366e+15
+== 4b. h in [1, 5000] where the power form (17h)^(16/7) is strictly smaller than D'(h): [(1, 1), (6, 1344)]

@@ -1,0 +1,7 @@
+fields (5 <= D <= 3000000, fundamental): 911876
+min r1 = h log D/sqrt D over all D: 0.398973 at D = 163 (h = 1)
+min r1 over D >= 2981: 0.790091 at D = 5923 (h = 7); statement c1 = 0.1800
+max r2 = h/(sqrt D log D) over D >= 2981: 0.170793 at D = 3071 (h = 76); statement c2 = 1.2000
+violations of (B) d <= D(h): 0
+tamper counts over D >= 2981: r1 < 18/25 (c1 x4): 0; r1 < 1/2: 0; r1 < 1: 151
+tamper counts over D >= 2981: r2 > c2/10: 3870; r2 > c2/20: 108621; r2 > c2/40: 396626

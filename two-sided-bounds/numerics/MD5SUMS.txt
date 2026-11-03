@@ -1,0 +1,16 @@
+f70b82b6dc6759db4f2390009e39b1bb  README.md
+c08d4c82f4094683a82d39752a580a34  calib.gp
+2e1783620233534fff5c1b4cb0eb0c1e  classcount.c
+d3cebcb287f9db9d7a808cda2097cbc1  classcount2.c
+eb1ecf764675956b9cdeeae3c04963de  figure_v2.py
+15556469aa4062de448afac6db6f715d  max_disc_by_class_number.gp
+d8a56490b72163a1456ccc0bdeff7417  paper_numbers_v2.py
+a2bf248d5a8bea6301807d1d0234a4da  r2_recheck.py
+01d049d643b781fb40bc71308a681acd  data/max_disc_by_class_number.txt
+6508ca0ac3c13571a253867f55346feb  calib.out
+20494692526abe4fb0abb9c944b82e89  classcount.out
+f540e0d1191b00fbacecb7c054300c95  classcount2.out
+1fccca3fdf5bbb6ad2ae44411459614f  paper_numbers_v2.out
+0d9e41ea981da4362ad2227d2056bc75  r2_recheck.out
+64dbeac7e53bd22acdcd3f6ab6e6fb39  fig_boundary.pdf
+9f14ccc732fb7ce9f22276b4ff75c7d2  fig_boundary_preview.png
