@@ -246,7 +246,6 @@ paths are now overridable by environment variables (see its docstring) and it sk
 release does not ship (the full per-segment output of range (1), and the externally published Jaswal/Kimura
 lists); its logic and its checks are otherwise unchanged, and it reproduces the digests quoted above. No other
 behavior was changed: every rebuilt binary reproduces the pinned one byte-for-byte, and every rerun check
-reproduces its recorded output byte-for-byte (see `REPORT.md` in the parent directory for the full list of
-reruns and diffs).
+reproduces its recorded output byte-for-byte; each file's md5 is in [`MD5SUMS.txt`](MD5SUMS.txt).
 
-[mj16]: https://doi.org/10.1090/mcom/3029 "Mosunov and Jacobson, Math. Comp. 85 (2016), 1983-2009"
+[mj16]: https://doi.org/10.1090/mcom3050 "Mosunov and Jacobson, Math. Comp. 85 (2016), 1983-2009"
