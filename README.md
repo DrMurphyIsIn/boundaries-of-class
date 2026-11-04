@@ -1,8 +1,11 @@
 # The Boundaries of Class
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23550257.svg)](https://doi.org/10.5281/zenodo.23550257)
+
 This repository collects one line of work on the class numbers of imaginary quadratic fields, from class number one up to
-class number 3500. Each step uses the new arguments against Siegel zeros that appeared in October 2026. Each says exactly
-what has been checked by a machine and what has not.
+class number 3500. It builds on the arguments against Landau–Siegel zeros that appeared in October 2026, chiefly OpenAI's
+Lean-formalized zero-free region Re s > 7/8 for Dirichlet L-functions. Each entry states exactly what a machine has
+checked and what it has not.
 
 It started as an entry for Terence Tao's
 [experimental AI-math challenge](https://terrytao.wordpress.com/2026/10/20/an-experimental-ai-math-challenge-using-tenth-discriminant-bounds-to-explore-arguments-ruling-out-siegel-zeroes/)
@@ -31,25 +34,29 @@ could manage.
 
 | entry | what it proves | how it is checked | where |
 |---|---|---|---|
-| 1. Class number one, first route | ℚ(√−m) has class number one iff m ∈ {1, 2, 3, 7, 11, 19, 43, 67, 163}; any tenth discriminant would satisfy d ≤ 652 | **kernel-checked** (Lean's kernel and nanoda), through OpenAI's 7/8 theorem | [`formalization/`](formalization/README.md), [`paper/`](paper/README.md) |
-| 2. Class number one, determinant route | the same theorem, with no L-function, zeta function or zero-free theorem in the closure | **kernel-checked**; nothing beyond Mathlib | [`determinant/`](determinant/README.md) |
-| 3. Class number at most two | the 27 fields of class number at most two, and the eighteen of class number two | **kernel-checked**, through the 7/8 theorem | [`hcn/`](hcn/README.md) |
-| 4. Tenth-discriminant bounds compared | a survey of the challenge's posted bounds, and the analytic cutoff \|D\| < 548 for class number one | ball arithmetic, reproduced by a second implementation; **not** kernel-checked | [`comparison/`](comparison/README.md) |
-| 5. Two-sided bounds for every field | h ≥ (1/3)·√d/log d for d ≥ 2981 and h ≤ (1/π)·√d·(log d + 7/6), with explicit thresholds (e.g. h ≤ 1000 ⇒ d < 1.605·10⁹; d ≥ 2⁴⁰ ⇒ h ≥ 17450) and the boundary d ≤ D(h) | **kernel-checked** (Lean's kernel and nanoda), through the 7/8 theorem at real points | [`two-sided-bounds/`](two-sided-bounds/README.md), [`paper/`](two-sided-bounds/paper/paper.pdf) |
-| 6. Class number at most 3500 | all imaginary quadratic fields with h ≤ 3500 (50,299,869; largest \|D\| 3,495,584,467), under Kimura's zero bound, extending Jaswal's h ≤ 3000 | **not** kernel-checked as a whole; see the entry for exactly which parts are | [`class-number-3500/`](class-number-3500/README.md), [`paper/`](class-number-3500/paper/paper.pdf) |
+| 1. Class number one, first route | ℚ(√−m) has class number one iff m ∈ {1, 2, 3, 7, 11, 19, 43, 67, 163}, with no Heegner, Baker, Stark or Gross–Zagier input: the 7/8 theorem and the Chowla–Selberg formula give d ≤ 652, and split-prime certificates settle the rest | **kernel-checked** (Lean's kernel and nanoda), through OpenAI's 7/8 theorem | [`formalization/`](formalization/README.md), [`paper/`](paper/README.md) |
+| 2. Class number one, determinant route | the same theorem, with no L-function, zeta function or zero-free theorem in the closure, by Green's derivative determinant made nonzero by van Dijk's finite-field argument | **kernel-checked**; nothing beyond Mathlib | [`determinant/`](determinant/README.md) |
+| 3. Class number at most two | the 27 fields of class number at most two, and the eighteen of class number two, by LemmaLab's class-sum extension of the first route | **kernel-checked**, through the 7/8 theorem | [`hcn/`](hcn/README.md) |
+| 4. Tenth-discriminant bounds compared | a survey of the bounds posted in the challenge thread, on one scale, and the light-machinery determinant bound improved to the cutoff \|D\| < 548 for class number one | certified in ball arithmetic, reproduced by a second implementation; **not** kernel-checked | [`comparison/`](comparison/README.md) |
+| 5. Two-sided bounds for every field | 28 statements: h ≥ (1/3)·√d/log d for d ≥ 2981 and h ≥ d^{7/16}/17 for d ≥ 1000; Dirichlet's class number formula and h ≤ (1/π)·√d·(log d + 7/6); ten thresholds and three point values (e.g. h ≤ 1000 ⇒ d < 1.605·10⁹; d ≥ 2⁴⁰ ⇒ h ≥ 17,450) | **kernel-checked** (Lean's kernel and nanoda), the 7/8 theorem used at real points only | [`two-sided-bounds/`](two-sided-bounds/README.md), [`paper/`](two-sided-bounds/paper/paper.pdf) |
+| 6. Class number at most 3500 | under the explicit real-zero bound of Kimura's Theorem 1, exactly 50,299,869 fields with h ≤ 3500, the largest \|D\| being 3,495,584,467 (h = 3477); extends Jaswal's classification by his method and reproduces his and Kimura's lists exactly; the full list is in the Zenodo record | **not** kernel-checked as a whole; see the entry for exactly which parts are | [`class-number-3500/`](class-number-3500/README.md), [`paper/`](class-number-3500/paper/paper.pdf) |
 
-Entries 1 to 4 were published while this repository was called **tenth-discriminant** (releases v1.0.0 to v1.4.0,
-concept DOI [10.5281/zenodo.23550257](https://doi.org/10.5281/zenodo.23550257)). The repository was renamed on 2 November
+The current release is **v2.0.1** ([10.5281/zenodo.23932214](https://doi.org/10.5281/zenodo.23932214)), which corrects two
+bibliographic references in v2.0.0; all versions share the concept DOI
+[10.5281/zenodo.23550257](https://doi.org/10.5281/zenodo.23550257). Entries 1 to 4 were published while this repository was
+called **tenth-discriminant** (releases v1.0.0 to v1.4.0). The repository was renamed on 2 November
 2026, when the later entries joined it; links to `DrMurphyIsIn/tenth-discriminant` redirect here, and the paths of
 entries 1 to 4 are unchanged. Their original README, with the statements, the trust base, the six-step argument and how
 each proof was checked, is [`TENTH_DISCRIMINANT.md`](TENTH_DISCRIMINANT.md).
 
 ## Where the line goes, and what "kernel-checked" means here
 
-The first three entries are kernel-checked from Mathlib's own definitions. Lean's kernel and the independent kernel nanoda
-both replay the whole proof, and the only axioms are Lean's three standard ones. When OpenAI's 7/8 theorem is used, its
-Lean proof sits inside the checked closure rather than being assumed. The manuscript it formalises has not been refereed.
-The kernel check covers the Lean proof, not the manuscript.
+Entries 1, 2, 3 and 5 are kernel-checked from Mathlib's own definitions. Comparator accepts each proof under two
+independent kernels, Lean's and nanoda, and the only axioms are Lean's three standard ones. The runs were local and not
+sandboxed. When OpenAI's 7/8 theorem is used, its Lean proof sits inside the checked closure rather than being assumed. The
+manuscript it formalises has not been refereed, and the kernel check covers the Lean proof, not the manuscript. Entries 4
+and 6 rest on interval arithmetic and on agreement between independent programs and published data, and each says so.
+None of this work has been refereed.
 
 As the class number grows, the finite computations grow too, and the kernel can no longer replay them directly. The
 classification up to 3500 rests on a sieve over every discriminant from 2⁴⁰ up to about 1.6·10¹⁵. A kernel replay of that sieve with
@@ -66,7 +73,9 @@ would be glad to collaborate on that.
 ## Credits
 
 The challenge is Terence Tao's. The arguments excluding Siegel zeros are OpenAI's (with its Lean formalizations), with
-further proofs by William Banks, Bryce Kerr and Ben Green. Iwao Kimura made the zero bound explicit, checked it in Lean,
+further proofs by William Banks, Bryce Kerr and Ben Green. Entry 2 follows the companion note of
+twinheterodox/tenth-discriminant, building on L. Silberman, K. Pratt, B. Green and R. van Dijk; entries 3 and 5 follow
+LemmaLab's class-sum extension posted in the challenge thread. Iwao Kimura made the zero bound explicit, checked it in Lean,
 and determined all fields with h ≤ 2000. Manvir Jaswal extended that to h ≤ 3000, and entry 6 follows his method. The
 sieve goes back to Mark Watkins. The unconditional tabulation of class groups up to 2⁴⁰ is Anton Mosunov's and Michael
 Jacobson's. The individual entries credit the people whose routes they follow, including the commenters on Tao's post
@@ -74,8 +83,8 @@ whose ideas they use.
 
 ## How this was made
 
-This work was done with extensive use of an AI assistant (Claude, by Anthropic), under the direction of the author, who
-is responsible for it. A separate AI session reviewed each entry before release. That review is not a substitute for a
+This work was produced with extensive use of Claude (Anthropic) under the direction of the author, who is responsible
+for it. A separate AI session reviewed each entry before release. That review is not a substitute for a
 human referee. The mathematical routes are due to the people credited above.
 
 ## Licensing
