@@ -68,7 +68,8 @@ step, what each part rests on:
 - a sieve cross-checked against the published counts.
 
 The aim is to leave a basis from which a fully kernel-checked classification can be built, by us or by anyone else. We
-would be glad to collaborate on that.
+would be glad to collaborate on that. The design for it, with the per-range certificate format and a worked example,
+is in [`class-number-3500/kernel-route/`](class-number-3500/kernel-route/README.md).
 
 ## Credits
 
