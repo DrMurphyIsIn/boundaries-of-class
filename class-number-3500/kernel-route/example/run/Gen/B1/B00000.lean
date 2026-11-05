@@ -1,0 +1,12 @@
+import BoundariesOfClass.Sieve.Block.Defs
+import BoundariesOfClass.Sieve.Block.Base.Pats
+import BoundariesOfClass.Sieve.Block.Base.Primes
+
+namespace BoundariesOfClass.Sieve.Block.Gen
+
+def blk_B1_00000 : Blk := ⟨1, 10, 1000, 3461, 58, Base.pats, Base.oddPrimes, 61501577861568104283923723841611832207865934590357532972465354201160344292882232942447763156164412817532342133494896761783187478320876221992841451316634638456655455194879249394350187399658770059771770002110541998579002075548481013208288271775948733848947261440⟩
+
+set_option maxRecDepth 1000000 in
+theorem blk_B1_00000_ok : blockOK blk_B1_00000 = true := by decide +kernel
+
+end BoundariesOfClass.Sieve.Block.Gen

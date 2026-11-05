@@ -1,0 +1,9 @@
+X = 28,000,000,000; lanes = 10,500,000,000; Y_max (family A) = 83,666
+fits: build 4.25 + 1.291e-3*Y s; Lean replay 18.9 + 1.203e-3*Y; nanoda 0.0 + 2.085e-3*Y
+L = 100,000:  105,000 blocks | Lean build    2,224 CPU-h | recompile audit    2,224 | Comparator Lean    2,712 | nanoda    3,595 | sum   10,756
+L =  50,000:  210,000 blocks | Lean build    4,448 CPU-h | recompile audit    4,448 | Comparator Lean    5,425 | nanoda    7,191 | sum   21,511
+L =  25,000:  420,000 blocks | Lean build    8,896 CPU-h | recompile audit    8,896 | Comparator Lean   10,850 | nanoda   14,382 | sum   43,023
+first design at N = 2000 below X = 7.8e+09: 3,245 CPU-h (single kernel pass; 3994 us per radicand)
+first design at N = 3500 below X = 2.8e+10: 22,294 CPU-h (single kernel pass; 7644 us per radicand)
+first design at N = 5000 below X = 6.32e+10: 74,346 CPU-h (single kernel pass; 11293 us per radicand)
+sanity, h <= 1000 range (X = 1.605e9, L = 1e5, whole range from 3): 6,021 blocks, build 36 CPU-h

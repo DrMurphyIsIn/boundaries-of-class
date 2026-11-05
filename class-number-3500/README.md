@@ -54,7 +54,10 @@ in the paper's Remark on a "7/8 hypothesis" shortcut, which does not use range (
 - [`cover_check/`](cover_check/) — `cover_check.py`, the checker that the four ranges tile the integers correctly
   and that the range-(3) production run covers exactly Jaswal's eleven intervals with no field left over, and its
   recorded output at `N = 3500` (`COVER_CHECK_p35.out`).
-- `MD5SUMS.txt` — an MD5 checksum for every file in this release.
+- [`kernel-route/`](kernel-route/README.md) — the design for a fully kernel-checked version of this classification
+  on the 7/8 route: the cut-off, the block sieve (its Lean soundness library, proved), the per-range certificate
+  format, a built and two-kernel-checked example at N = 10, and the costed plan. It has its own `MD5SUMS.txt`.
+- `MD5SUMS.txt` — an MD5 checksum for every file in this release (for `kernel-route/`, its own checksum file).
 
 ## The full list
 
@@ -197,7 +200,9 @@ Quoting the paper's Section 4 nearly verbatim:
 
 A direct kernel replay of the range-(3) sieve with current tools would, by our measurements, take on the order of
 hundreds of days on a single workstation, so we have not attempted it. We release the inputs, programs and logs
-in a form intended to make such an effort — by us or by others — as straightforward as possible.
+in a form intended to make such an effort — by us or by others — as straightforward as possible. On the 7/8 route
+the range-(3) sieve is not needed, and [`kernel-route/`](kernel-route/README.md) sets out what a kernel-checked
+classification would take instead, piece by piece, with what is proved, what is measured and what is open.
 
 ## What we do and do not claim
 
